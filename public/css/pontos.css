@@ -1,0 +1,426 @@
+:root {
+  --bg-1: #070d19;
+  --bg-2: #0f172a;
+  --card-bg: rgba(15, 23, 42, 0.85);
+  --card-inner: rgba(30, 41, 59, 0.6);
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --blue: #3b82f6;
+  --green: #10b981;
+  --orange: #f59e0b;
+  --red: #ef4444;
+  --radius: 20px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 35%),
+    linear-gradient(135deg, var(--bg-1), var(--bg-2));
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: 120px;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 28px;
+  background: rgba(7, 13, 25, 0.85);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-area {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px;
+}
+
+.brand-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.brand-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.btn-voltar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-voltar:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.45);
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 20px;
+}
+
+/* HERO */
+.hero-logistica {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.badge-logistica {
+  display: inline-block;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+  text-transform: capitalize;
+}
+
+.hero-logistica h1 {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+}
+
+.hero-logistica p {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* BOTÃO NOVO PONTO */
+.btn-novo-ponto {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 22px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 24px;
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-novo-ponto:hover {
+  transform: translateY(-2px);
+  background: #059669;
+  box-shadow: 0 8px 22px rgba(16, 185, 129, 0.45);
+}
+
+/* CARDS DOS PONTOS */
+.pontos-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.card-ponto {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+  transition: all 0.25s ease;
+}
+
+.card-ponto:hover {
+  border-color: rgba(59, 130, 246, 0.3);
+  transform: translateY(-2px);
+}
+
+.card-ponto-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.card-ponto-info h3 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.card-ponto-local {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.btn-deletar-ponto {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-deletar-ponto:hover {
+  color: var(--red);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* GRID DE MÉTRICAS DENTRO DO CARD */
+.ponto-metricas-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.metrica-item {
+  background: var(--card-inner);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 14px;
+  padding: 16px 12px;
+  text-align: center;
+}
+
+.metrica-item span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.metrica-item strong {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.metrica-item.livres strong {
+  color: var(--green);
+}
+
+.metrica-item.alugados strong {
+  color: var(--orange);
+}
+
+/* NAVEGAÇÃO INFERIOR */
+.bottom-nav {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: calc(100% - 24px);
+  max-width: 640px;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  z-index: 999;
+}
+
+.nav-item {
+  flex: 1;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: #94a3b8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-emoji { font-size: 1.2rem; line-height: 1; }
+
+.nav-item i {
+  font-size: 18px;
+}
+
+.nav-item:hover {
+  color: #e2e8f0;
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.4);
+}
+
+/* MODAL */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.85);
+  backdrop-filter: blur(8px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #0f172a;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 480px;
+  padding: 28px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+}
+
+.modal-content h3 {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+
+.modal-subtitle {
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.modal-content input {
+  width: 100%;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: #fff;
+  font-size: 14px;
+  margin-bottom: 14px;
+  outline: none;
+}
+
+.modal-content input:focus {
+  border-color: var(--blue);
+}
+
+.modal-actions-2 {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.modal-actions-2 button {
+  flex: 1;
+  border: none;
+  border-radius: 12px;
+  padding: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.modal-actions-2 button:first-child {
+  background: var(--green);
+  color: white;
+}
+
+.modal-actions-2 .btn-cancelar {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+/* TOAST */
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 100px;
+  background: rgba(15, 23, 42, 0.96);
+  color: #fff;
+  padding: 14px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(20px);
+  transition: 0.25s ease;
+  z-index: 1000;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-transition {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.96);
+  opacity: 0;
+  visibility: hidden;
+  transition: 0.22s ease;
+  z-index: 9999;
+}
+
+.page-transition.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (max-width: 600px) {
+  .ponto-metricas-grid {
+    grid-template-columns: 1fr;
+  }
+  .hero-logistica h1 {
+    font-size: 26px;
+  }
+}

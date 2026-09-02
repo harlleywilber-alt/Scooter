@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-access="admin">
+<head>
+  <meta charset="UTF-8">
+  <title>Pontos de Distribuição | E-Scooter Go</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="css/pontos.css">
+  <link rel="stylesheet" href="css/theme.css">
+  <script src="js/auth-guard.js"></script>
+</head>
+<body>
+  <div class="page-transition" id="pageTransition"></div>
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand-area is-clickable" onclick="navegarComAnimacao('patinete.html')">
+      <img src="images/logo.png" alt="E-Scooter Go" class="brand-logo">
+      <div>
+        <div class="brand-title">E-Scooter Go</div>
+        <div class="brand-subtitle">Pontos de Distribuição</div>
+      </div>
+    </div>
+
+    <button class="btn-voltar" onclick="navegarComAnimacao('patinete.html')">
+      <i class="fa-solid fa-arrow-left"></i>
+      Voltar
+    </button>
+  </header>
+
+  <main class="container">
+    <!-- HERO -->
+    <section class="hero-logistica">
+      <span class="badge-logistica">Logística</span>
+      <h1>Gestão de Pontos</h1>
+      <p>Cadastre e monitore os locais de retirada e devolução.</p>
+    </section>
+
+    <!-- BOTÃO NOVO PONTO -->
+    <button class="btn-novo-ponto" onclick="abrirModalNovoPonto()">
+      <i class="fa-solid fa-location-dot"></i>
+      Novo Ponto
+    </button>
+
+    <!-- LISTA DE PONTOS -->
+    <div class="pontos-lista" id="listaPontos">
+      <!-- Carregado via JS -->
+    </div>
+  </main>
+
+  <!-- MODAL NOVO PONTO -->
+  <div class="modal" id="modalPonto">
+    <div class="modal-content">
+      <h3><i class="fa-solid fa-location-dot"></i> Cadastrar Ponto</h3>
+      <p class="modal-subtitle">Informe o nome e o endereço ou coordenadas do ponto de distribuição.</p>
+      
+      <input type="text" id="nomePontoInput" placeholder="Nome do ponto (ex: Uni goias, Praça Central)">
+      <input type="text" id="localizacaoPontoInput" placeholder="Endereço / Coordenadas (ex: -16.691576, -49.310984)">
+      
+      <div class="modal-actions-2">
+        <button class="btn-primary" onclick="confirmarNovoPonto()">Salvar Ponto</button>
+        <button class="btn-cancelar" onclick="fecharModalPonto()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- NAVEGAÇÃO INFERIOR -->
+  <nav class="bottom-nav">
+    <button class="nav-item" onclick="navegarComAnimacao('patinete.html')">
+      <i class="fa-solid fa-bicycle" aria-hidden="true"></i>
+      <span>Patinetes</span>
+    </button>
+
+    <button class="nav-item active" onclick="navegarComAnimacao('pontos.html')">
+      <i class="fa-solid fa-location-dot"></i>
+      <span>Pontos</span>
+    </button>
+
+    <button class="nav-item" onclick="navegarComAnimacao('relatorio.html')">
+      <i class="fa-solid fa-chart-pie"></i>
+      <span>Relatórios</span>
+    </button>
+
+    <button class="nav-item" onclick="navegarComAnimacao('admin.html')">
+      <i class="fa-solid fa-user-shield"></i>
+      <span>Admin</span>
+    </button>
+  </nav>
+
+  <script src="js/common.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/pontos.js"></script>
+</body>
+</html>

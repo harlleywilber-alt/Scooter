@@ -1,0 +1,354 @@
+:root {
+  --color-bg: #0b1220;
+  --color-surface: #111827;
+  --color-surface-raised: #1e293b;
+  --color-text: #f8fafc;
+  --color-muted: #a8b5c8;
+  --brand-primary: #3b82f6;
+  --brand-primary-dark: #2563eb;
+  --brand-primary-light: #60a5fa;
+  --brand-accent: #8b5cf6;
+  --brand-success: #22c55e;
+  --brand-warning: #f59e0b;
+  --brand-danger: #ef4444;
+  --blue: var(--brand-primary);
+  --green: var(--brand-success);
+  --orange: var(--brand-warning);
+  --red: var(--brand-danger);
+  --text: var(--color-text);
+  --muted: var(--color-muted);
+  --bg-1: var(--color-bg);
+  --bg-2: var(--color-surface);
+  --card: rgba(17, 24, 39, .94);
+  --surface-glass: rgba(15, 23, 42, 0.82);
+  --border-soft: rgba(148, 163, 184, 0.16);
+  --focus-ring: 0 0 0 4px rgba(96, 165, 250, 0.24);
+}
+
+html[data-access] { display: none; }
+html[data-access].acesso-liberado { display: block; }
+.is-hidden { display: none; }
+.is-clickable { cursor: pointer; }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3b82f6 rgba(15,23,42,.72);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(15,23,42,.72);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(148,163,184,.08);
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 34px;
+  border: 2px solid rgba(15,23,42,.72);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #60a5fa, #2563eb);
+  box-shadow: 0 2px 8px rgba(37,99,235,.3);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #93c5fd, #3b82f6);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+body {
+  background:
+    radial-gradient(circle at 8% 5%, rgba(59, 130, 246, 0.14), transparent 28%),
+    radial-gradient(circle at 92% 90%, rgba(139, 92, 246, 0.07), transparent 28%),
+    linear-gradient(150deg, var(--color-bg) 0%, #0f172a 52%, var(--color-surface) 100%) !important;
+  background-attachment: fixed !important;
+}
+
+button, input, select, textarea { font: inherit; }
+button {
+  position: relative;
+  isolation: isolate;
+  max-width: 100%;
+  min-width: 0;
+  letter-spacing: .01em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  -webkit-tap-highlight-color: transparent;
+}
+button:not(:disabled):active { transform: translateY(1px) scale(.985) !important; }
+button:disabled { cursor: not-allowed !important; filter: grayscale(.35); opacity: .52 !important; }
+
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--brand-primary-light) !important;
+  outline-offset: 3px;
+  box-shadow: var(--focus-ring) !important;
+}
+
+.topbar, .hero-panel, .fleet-box, .painel, .config-box, .login-card {
+  border-color: var(--border-soft) !important;
+  box-shadow: 0 16px 38px rgba(2, 6, 23, .24) !important;
+}
+
+.btn-novo-ponto, .btn-primary, .btn-salvar, .btn-topo,
+#btnAcao {
+  border: 1px solid rgba(255,255,255,.12) !important;
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark)) !important;
+  color: #fff !important;
+  box-shadow: 0 7px 17px rgba(37,99,235,.20) !important;
+  font-weight: 750 !important;
+}
+
+.btn-aprovar, .btn-modal-green, .btn-frota-locacao, .btn-finalizar {
+  border: 1px solid rgba(255,255,255,.12) !important;
+  background: linear-gradient(135deg, #22c55e, #16a34a) !important;
+  color: #fff !important;
+  box-shadow: 0 7px 17px rgba(22,163,74,.18) !important;
+}
+
+.btn-frota-action, .btn-secondary, .btn-reset, .btn-voltar, .btn-ghost,
+.btn-modal-gray, .btn-cancelar, .acoes-grid button, .btn-toggle-chart, .cliente-item {
+  border: 1px solid rgba(148,163,184,.20) !important;
+  background: linear-gradient(145deg, rgba(51,65,85,.92), rgba(30,41,59,.92)) !important;
+  color: #e2e8f0 !important;
+  box-shadow: 0 5px 14px rgba(2,6,23,.15) !important;
+}
+
+.btn-modal-purple {
+  border: 1px solid rgba(167,139,250,.35) !important;
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important;
+  color: #fff !important;
+  box-shadow: 0 7px 17px rgba(109,40,217,.18) !important;
+}
+
+.btn-sair, .btn-sair-acao, .btn-recusar, .btn-excluir, .btn-deletar-ponto {
+  border: 1px solid rgba(248,113,113,.28) !important;
+  background: linear-gradient(135deg, var(--brand-danger), #dc2626) !important;
+  color: #fff !important;
+  box-shadow: 0 7px 17px rgba(220,38,38,.18) !important;
+}
+
+.btn-toggle-chart.active {
+  border: 1px solid rgba(96,165,250,.30) !important;
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark)) !important;
+  color: #fff !important;
+  box-shadow: 0 7px 17px rgba(37,99,235,.20) !important;
+}
+
+button[onclick*="abrirModalManutencao"],
+button[onclick*="confirmarEnviarManutencao"] {
+  border: 1px solid rgba(251,191,36,.28) !important;
+  background: linear-gradient(135deg, var(--brand-warning), #d97706) !important;
+  color: #fff !important;
+  box-shadow: 0 7px 17px rgba(217,119,6,.18) !important;
+}
+
+button[onclick*="abrirModalRemoverPatinete"] {
+  border-color: rgba(248,113,113,.25) !important;
+  background: rgba(127,29,29,.44) !important;
+  color: #fecaca !important;
+}
+
+.modal-actions-2 button.btn-primary {
+  border: 1px solid rgba(96,165,250,.28) !important;
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark)) !important;
+  color: #fff !important;
+  box-shadow: 0 7px 17px rgba(37,99,235,.20) !important;
+}
+
+.btn-frota-locacao, .btn-frota-action, .btn-novo-ponto, .btn-primary, .btn-secondary,
+.btn-salvar, .btn-reset, .btn-voltar, .btn-ghost, .btn-sair, .btn-topo,
+.btn-modal-green, .btn-modal-purple, .btn-modal-gray, .btn-cancelar,
+.btn-toggle-chart, .btn-finalizar, .acoes-grid button, .usuario-acoes button, #btnAcao, .modal-actions-2 button {
+  min-height: 42px;
+  max-width: 100%;
+  padding: 9px clamp(10px, 1.5vw, 16px) !important;
+  border-radius: 12px !important;
+  line-height: 1.2;
+  white-space: normal;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease, border-color 160ms ease !important;
+}
+
+.fleet-actions, .top-actions, .topbar-actions, .acoes, .acoes-filtro,
+.usuario-acoes, .modal-actions-2 {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.fleet-actions > button, .top-actions > button, .topbar-actions > button,
+.acoes > button, .acoes-filtro > button, .usuario-acoes > button,
+.modal-actions-2 > button {
+  min-width: 0;
+}
+
+.btn-deletar-ponto {
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 8px !important;
+}
+
+.btn-frota-locacao:not(:disabled):hover, .btn-frota-action:not(:disabled):hover,
+.btn-novo-ponto:not(:disabled):hover, .btn-primary:not(:disabled):hover,
+.btn-secondary:not(:disabled):hover, .btn-salvar:not(:disabled):hover,
+.btn-reset:not(:disabled):hover, .btn-voltar:not(:disabled):hover,
+.btn-ghost:not(:disabled):hover, .btn-sair:not(:disabled):hover,
+.btn-topo:not(:disabled):hover, .btn-modal-green:not(:disabled):hover,
+.btn-modal-purple:not(:disabled):hover, .btn-modal-gray:not(:disabled):hover,
+.btn-toggle-chart:not(:disabled):hover, .acoes-grid button:not(:disabled):hover,
+.usuario-acoes button:not(:disabled):hover, #btnAcao:not(:disabled):hover,
+.modal-actions-2 button:not(:disabled):hover {
+  transform: translateY(-2px);
+  filter: brightness(1.09);
+  box-shadow: 0 15px 30px rgba(2,6,23,.30) !important;
+}
+
+input, select, textarea {
+  border-color: rgba(148,163,184,.20) !important;
+  background: rgba(15,23,42,.78) !important;
+  color: #f8fafc !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease !important;
+}
+input:hover, select:hover, textarea:hover { border-color: rgba(96,165,250,.42) !important; }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--brand-primary-light) !important;
+  background: rgba(30,41,59,.96) !important;
+  box-shadow: var(--focus-ring) !important;
+  outline: none !important;
+}
+
+.bike, .card, .card-ponto, .ponto-card, .card-resumo, .grafico-box, .analise-card,
+.usuario-item, .historico-item, .historico-operacional article, .manutencao-admin-item,
+.operador-admin-item, .alerta-card, .ranking-card {
+  border-color: var(--border-soft) !important;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease !important;
+}
+.bike:hover, .card-ponto:hover, .ponto-card:hover, .usuario-item:hover {
+  transform: translateY(-3px);
+  border-color: rgba(96,165,250,.34) !important;
+  box-shadow: 0 12px 26px rgba(2,6,23,.22) !important;
+}
+
+.admin-sidebar, .relatorio-sidebar, .card-ponto, .card-resumo,
+.grafico-box, .analise-card, .usuario-item, .operador-admin-item,
+.manutencao-admin-item, .alerta-card, .ranking-card {
+  background: linear-gradient(145deg, rgba(17,24,39,.96), rgba(15,23,42,.92)) !important;
+}
+
+.status-pendente, .status-manutencao-aberta, .prioridade-media,
+.contador-pendentes, .contador-manutencoes {
+  color: #fbbf24 !important;
+  background-color: rgba(245,158,11,.14) !important;
+}
+
+.status-aprovado, .status-manutencao-concluida, .prioridade-baixa,
+.status-tag.locacao {
+  color: #86efac !important;
+  background-color: rgba(34,197,94,.13) !important;
+}
+
+.status-recusado, .prioridade-urgente {
+  color: #fca5a5 !important;
+  background-color: rgba(239,68,68,.14) !important;
+}
+
+.bottom-nav {
+  border-color: rgba(148,163,184,.18) !important;
+  background: rgba(8,15,29,.90) !important;
+  box-shadow: 0 14px 34px rgba(2,6,23,.38) !important;
+}
+.nav-item { transition: color 160ms ease, background 160ms ease, transform 160ms ease !important; }
+.nav-item:not(.active):hover { color: #fff !important; background: rgba(96,165,250,.10) !important; transform: translateY(-2px); }
+.nav-item.active { background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark)) !important; box-shadow: 0 7px 18px rgba(37,99,235,.24) !important; }
+.bottom-nav.nav-operador { grid-template-columns: 1fr !important; width: min(240px, calc(100% - 24px)) !important; }
+.modal-content { border: 1px solid var(--border-soft) !important; box-shadow: 0 20px 48px rgba(0,0,0,.38) !important; }
+
+@media (max-width: 640px) {
+  .topbar {
+    gap: 10px !important;
+    padding: 12px 14px !important;
+  }
+
+  .fleet-actions, .top-actions, .topbar-actions, .acoes, .acoes-filtro {
+    width: 100%;
+    gap: 7px !important;
+  }
+
+  .fleet-actions > button, .top-actions > button, .acoes > button,
+  .acoes-filtro > button {
+    flex: 1 1 auto;
+  }
+
+  .btn-frota-locacao, .btn-frota-action, .btn-novo-ponto, .btn-primary, .btn-secondary,
+  .btn-salvar, .btn-reset, .btn-voltar, .btn-ghost, .btn-sair, .btn-topo,
+  .btn-modal-green, .btn-modal-purple, .btn-modal-gray, .btn-cancelar,
+  .btn-toggle-chart, .acoes-grid button, .usuario-acoes button, #btnAcao,
+  .modal-actions-2 button {
+    min-height: 40px;
+    padding: 8px 10px !important;
+    font-size: clamp(12px, 3.4vw, 14px) !important;
+  }
+
+  .usuario-acoes {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+    width: 100%;
+  }
+
+  .bottom-nav {
+    gap: 4px !important;
+    padding: 6px !important;
+    border-radius: 18px !important;
+  }
+
+  .bottom-nav .nav-item {
+    min-width: 0;
+    min-height: 48px !important;
+    padding: 6px 3px !important;
+    gap: 2px !important;
+    border-radius: 12px !important;
+    line-height: 1.05;
+    overflow-wrap: normal;
+  }
+
+  .bottom-nav .nav-item small,
+  .bottom-nav .nav-item span:not(.nav-emoji) {
+    font-size: 10px !important;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .brand-subtitle, .logo-texto span { display: none; }
+  .brand-logo, .logo-topo img { width: 40px !important; height: 40px !important; }
+  .brand-title, .logo-texto h1 { font-size: 16px !important; }
+
+  .modal-actions-2 {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .modal-actions-2 > button:only-child { grid-column: 1 / -1; }
+
+  .btn-ghost {
+    width: 40px;
+    min-width: 40px;
+    padding-inline: 8px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
