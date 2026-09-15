@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-access="admin">
+<head>
+  <meta charset="UTF-8">
+  <title>Painel Administrativo | E-Scooter Go</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/theme.css">
+  <script src="js/auth-guard.js"></script>
+</head>
+<body class="page-enter">
+  <div class="page-transition" id="pageTransition"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-area is-clickable" onclick="navegarComAnimacao('patinete.html')">
+        <img src="images/logo.png" alt="E-Scooter Go" class="brand-logo">
+        <div>
+          <div class="brand-title">E-Scooter Go</div>
+          <div class="brand-subtitle">Gestão & Configurações</div>
+        </div>
+      </div>
+
+      <button class="btn-voltar" onclick="navegarComAnimacao('patinete.html')">
+        <i class="fa-solid fa-arrow-left"></i>
+        Voltar para Frota
+      </button>
+    </header>
+
+    <div class="admin-layout">
+      <aside class="admin-sidebar" aria-label="Menu do painel administrativo">
+        <div class="admin-sidebar-titulo">
+          <i class="fa-solid fa-sliders"></i>
+          <span>Menu administrativo</span>
+        </div>
+        <button class="admin-menu-mobile" id="btnMenuAdminMobile" type="button" aria-expanded="false" onclick="alternarMenuAdminMobile()">
+          <span><i class="fa-solid fa-bars"></i><b id="adminMenuMobileLabel">Visão geral</b></span>
+          <i class="fa-solid fa-chevron-down admin-menu-seta"></i>
+        </button>
+        <nav class="admin-menu">
+          <button class="admin-menu-item active" data-admin-menu="visao" onclick="selecionarSecaoAdmin('visao')">
+            <i class="fa-solid fa-chart-line"></i><span>Visão geral</span>
+          </button>
+          <button class="admin-menu-item" data-admin-menu="alertas" onclick="selecionarSecaoAdmin('alertas')">
+            <i class="fa-solid fa-bell"></i><span>Alertas</span><b id="contadorMenuAlertas">0</b>
+          </button>
+          <button class="admin-menu-item" data-admin-menu="usuarios" onclick="selecionarSecaoAdmin('usuarios')">
+            <i class="fa-solid fa-users"></i><span>Usuários</span><b id="contadorMenuPendentes">0</b>
+          </button>
+          <button class="admin-menu-item" data-admin-menu="manutencoes" onclick="selecionarSecaoAdmin('manutencoes')">
+            <i class="fa-solid fa-screwdriver-wrench"></i><span>Manutenções</span>
+          </button>
+          <button class="admin-menu-item" data-admin-menu="operadores" onclick="selecionarSecaoAdmin('operadores')">
+            <i class="fa-solid fa-user-clock"></i><span>Operadores</span>
+          </button>
+          <button class="admin-menu-item" data-admin-menu="historico" onclick="selecionarSecaoAdmin('historico')">
+            <i class="fa-solid fa-clock-rotate-left"></i><span>Histórico</span>
+          </button>
+          <button class="admin-menu-item" data-admin-menu="configuracoes" onclick="selecionarSecaoAdmin('configuracoes')">
+            <i class="fa-solid fa-gears"></i><span>Configurações</span>
+          </button>
+          <button class="admin-menu-item" data-admin-menu="desempenho" onclick="selecionarSecaoAdmin('desempenho')">
+            <i class="fa-solid fa-ranking-star"></i><span>Desempenho</span>
+          </button>
+          <button class="admin-menu-item" data-admin-menu="acoes" onclick="selecionarSecaoAdmin('acoes')">
+            <i class="fa-solid fa-bolt"></i><span>Ações rápidas</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main class="container admin-conteudo">
+      <section class="hero-panel admin-secao active" data-admin-section="visao">
+        <div class="perfil-card">
+          <div class="avatar">
+            <i class="fa-solid fa-user-shield"></i>
+          </div>
+          <h2 id="adminNome">Administrador</h2>
+          <p class="muted" id="adminCargo">Gestor do sistema</p>
+        </div>
+
+        <div class="hero-side">
+          <span class="hero-badge">Administração Central</span>
+          <h1>Painel do Administrador</h1>
+          <p>Métricas financeiras do mês atual (zeramento automático na virada de mês) e histórico completo para exportação.</p>
+        </div>
+      </section>
+
+      <section class="config-box admin-secao" data-admin-section="alertas">
+        <div class="section-header">
+          <div><h3>Central de alertas</h3><span class="section-subtitle">Pendências que precisam da atenção do administrador.</span></div>
+          <button class="btn-reset" onclick="carregarCentralAdmin()"><i class="fa-solid fa-rotate"></i> Atualizar</button>
+        </div>
+        <div id="centralAlertas" class="alertas-grid"><p class="usuarios-vazio">Carregando alertas...</p></div>
+      </section>
+
+      <section class="config-box admin-secao" data-admin-section="operadores">
+        <div class="section-header">
+          <div><h3>Controle de operadores</h3><span class="section-subtitle">Acompanhe atividade, produtividade, ponto e bloqueios temporários.</span></div>
+        </div>
+        <div id="listaOperadoresAdmin" class="operadores-admin-lista"><p class="usuarios-vazio">Carregando operadores...</p></div>
+      </section>
+
+      <section class="config-box admin-secao" data-admin-section="usuarios">
+        <div class="section-header usuarios-header">
+          <div>
+            <h3>Solicitações de acesso</h3>
+            <span class="section-subtitle">Aprove ou recuse os novos cadastros antes que eles possam entrar.</span>
+          </div>
+          <span class="contador-pendentes" id="contadorPendentes">0 pendentes</span>
+        </div>
+        <div class="usuarios-filtros">
+          <input id="pesquisaUsuario" type="search" placeholder="Pesquisar por nome ou usuário" oninput="filtrarUsuarios()">
+          <select id="filtroStatusUsuario" onchange="filtrarUsuarios()">
+            <option value="todos">Todos os status</option>
+            <option value="pendente">Pendentes</option>
+            <option value="aprovado">Aprovados</option>
+            <option value="recusado">Recusados</option>
+          </select>
+          <select id="filtroNivelUsuario" onchange="filtrarUsuarios()">
+            <option value="todos">Todos os níveis</option>
+            <option value="administrador">Administradores</option>
+            <option value="operador">Operadores</option>
+          </select>
+        </div>
+        <div id="listaUsuarios" class="usuarios-lista">
+          <p class="usuarios-vazio">Carregando usuários...</p>
+        </div>
+      </section>
+
+      <section class="config-box admin-secao" data-admin-section="historico">
+        <div class="section-header">
+          <div>
+            <h3>Histórico de acessos e alterações</h3>
+            <span class="section-subtitle">Últimas 100 atividades relacionadas às contas.</span>
+          </div>
+        </div>
+        <div id="historicoUsuarios" class="historico-lista">
+          <p class="usuarios-vazio">Carregando histórico...</p>
+        </div>
+      </section>
+
+      <section class="config-box admin-secao" data-admin-section="manutencoes">
+        <div class="section-header">
+          <div>
+            <h3>Patinetes enviados para manutenção</h3>
+            <span class="section-subtitle">Acompanhe os motivos informados pelos operadores e o andamento de cada serviço.</span>
+          </div>
+          <span class="contador-manutencoes" id="contadorManutencoes">0 em manutenção</span>
+        </div>
+        <div id="listaManutencoesAdmin" class="manutencoes-admin-lista">
+          <p class="usuarios-vazio">Carregando manutenções...</p>
+        </div>
+      </section>
+
+      <!-- ESTATÍSTICAS DO MÊS VIGENTE -->
+      <section class="stats-grid admin-secao active" data-admin-section="visao">
+        <div class="card">
+          <div class="card-top">
+            <span>Frota Total</span>
+            <i class="fa-solid fa-scooter"></i>
+          </div>
+          <p id="statPatinetes">0</p>
+        </div>
+
+        <div class="card">
+          <div class="card-top">
+            <span>Locações no Mês</span>
+            <i class="fa-solid fa-ticket"></i>
+          </div>
+          <p id="statLocacoes">0</p>
+        </div>
+
+        <div class="card">
+          <div class="card-top">
+            <span>Faturamento (Mês)</span>
+            <i class="fa-solid fa-money-bill-trend-up"></i>
+          </div>
+          <p id="statFaturamento">R$ 0,00</p>
+        </div>
+
+        <div class="card">
+          <div class="card-top">
+            <span>Lucro Líquido (Mês)</span>
+            <i class="fa-solid fa-chart-line"></i>
+          </div>
+          <p id="statSaldo">R$ 0,00</p>
+        </div>
+      </section>
+
+      <section class="config-box admin-secao" data-admin-section="configuracoes">
+        <div class="section-header">
+          <div><h3>Configurações do sistema</h3><span class="section-subtitle">Essas regras são aplicadas às próximas locações.</span></div>
+        </div>
+        <div class="form-grid configuracoes-grid">
+          <div class="field"><label>Nome da empresa</label><input id="configNomeEmpresa" maxlength="100"></div>
+          <div class="field"><label>Multa por minuto (R$)</label><input id="configMulta" type="number" min="0" step="0.01"></div>
+          <div class="field"><label>Limite de patinetes por locação</label><input id="configLimite" type="number" min="1" max="20"></div>
+          <div class="field field-largo"><label>Tempos disponíveis em minutos</label><input id="configTempos" placeholder="15, 30, 45"></div>
+        </div>
+        <div class="config-precos-box">
+          <h4>Preços por tempo</h4>
+          <div id="configPrecos" class="config-precos-grid"></div>
+        </div>
+        <div class="acoes"><button class="btn-salvar" onclick="salvarConfiguracoesSistema()"><i class="fa-solid fa-floppy-disk"></i> Salvar configurações</button></div>
+      </section>
+
+      <section class="config-box admin-secao" data-admin-section="desempenho">
+        <div class="section-header">
+          <div><h3>Indicadores de desempenho</h3><span class="section-subtitle">Comparativos calculados usando todo o histórico registrado.</span></div>
+        </div>
+        <div id="desempenhoAdmin" class="desempenho-grid"><p class="usuarios-vazio">Carregando indicadores...</p></div>
+      </section>
+
+      <!-- AÇÕES RÁPIDAS -->
+      <section class="config-box admin-secao" data-admin-section="acoes">
+        <div class="section-header">
+          <h3>Ações rápidas</h3>
+          <span class="section-subtitle">Acesse as principais áreas administrativas</span>
+        </div>
+
+        <div class="acoes-grid">
+          <button onclick="navegarComAnimacao('pontos.html')">
+            <i class="fa-solid fa-location-dot"></i>
+            Gestão de Pontos
+          </button>
+
+          <button onclick="navegarComAnimacao('relatorio.html')">
+            <i class="fa-solid fa-chart-pie"></i>
+            Ver Relatórios
+          </button>
+
+          <button class="btn-sair-acao" onclick="logoutAdmin()">
+            <i class="fa-solid fa-right-from-bracket"></i>
+            Sair do Sistema
+          </button>
+        </div>
+
+      </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-admin" id="modalAdmin" onclick="if(event.target === this) fecharModalAdmin()">
+    <div class="modal-content modal-admin-content" id="modalAdminContent"></div>
+  </div>
+
+  <div id="toastAdmin" class="toast"></div>
+
+  <!-- NAVEGAÇÃO INFERIOR COM 4 ABAS -->
+  <nav class="bottom-nav">
+    <button class="nav-item" onclick="navegarComAnimacao('patinete.html')">
+      <i class="fa-solid fa-bicycle" aria-hidden="true"></i>
+      <small>Patinetes</small>
+    </button>
+
+    <button class="nav-item" onclick="navegarComAnimacao('pontos.html')">
+      <i class="fa-solid fa-location-dot"></i>
+      <small>Pontos</small>
+    </button>
+
+    <button class="nav-item" onclick="navegarComAnimacao('relatorio.html')">
+      <i class="fa-solid fa-chart-pie"></i>
+      <small>Relatórios</small>
+    </button>
+
+    <button class="nav-item active" onclick="navegarComAnimacao('admin.html')">
+      <i class="fa-solid fa-user-shield"></i>
+      <small>Admin</small>
+    </button>
+  </nav>
+
+  <script src="js/common.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>E-Scooter Go - Login & Autenticação</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="css/login.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-left">
+      <div class="brand-block">
+        <img src="images/logo.png" alt="Logo E-Scooter Go" class="brand-logo">
+        <h1>E-Scooter Go</h1>
+        <p>Gestão moderna de patinetes elétricos, relatórios financeiros e controle operacional em tempo real.</p>
+
+        <div class="features">
+          <div><i class="fa-solid fa-scooter"></i> Gestão Completa de Frota</div>
+          <div><i class="fa-solid fa-route"></i> Controle de Pontos e Rotas</div>
+          <div><i class="fa-solid fa-shield-halved"></i> Autenticação Segura (Criptografia)</div>
+          <div><i class="fa-solid fa-screwdriver-wrench"></i> Gestão de Locações e Manutenções</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="login-right">
+      <div class="login-card">
+        <div class="login-top">
+          <span class="login-badge" id="modoBadge">Painel Administrativo</span>
+          <h2 id="tituloForm">Entrar</h2>
+          <p id="subtituloForm">Acesse sua central de controle</p>
+        </div>
+
+        <div class="input-group is-hidden" id="grupoNome">
+          <label for="nomeCadastro">Nome Completo</label>
+          <div class="input-box">
+            <i class="fa-solid fa-id-card"></i>
+            <input id="nomeCadastro" placeholder="Digite seu nome">
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="usuario">Usuário</label>
+          <div class="input-box">
+            <i class="fa-solid fa-user"></i>
+            <input id="usuario" placeholder="Digite seu usuário">
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="senha">Senha</label>
+          <div class="input-box">
+            <i class="fa-solid fa-lock"></i>
+            <input type="password" id="senha" placeholder="Digite sua senha">
+          </div>
+        </div>
+
+        <div class="input-group is-hidden" id="grupoConfirmarSenha">
+          <label for="confirmarSenha">Confirmar senha</label>
+          <div class="input-box">
+            <i class="fa-solid fa-shield-halved"></i>
+            <input type="password" id="confirmarSenha" placeholder="Confirme sua senha">
+          </div>
+        </div>
+
+        <button id="btnAcao" onclick="acaoPrincipal()">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i>
+          Entrar
+        </button>
+
+        <div class="link" id="linkTroca" onclick="alternarModo()">
+          Não tem conta? Cadastre-se
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/login.js"></script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-access="authenticated">
+<head>
+  <meta charset="UTF-8">
+  <title>E-SCOOTER GO | Central de Operações</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="css/paticss.css">
+  <link rel="stylesheet" href="css/theme.css">
+  <script src="js/auth-guard.js"></script>
+</head>
+
+<body class="page-enter">
+  <div class="page-transition" id="pageTransition"></div>
+
+  <div class="app-shell">
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="brand-area is-clickable" onclick="navegarComAnimacao('patinete.html')">
+        <img src="images/logo.png" class="brand-logo" alt="E-Scooter Go">
+        <div>
+          <div class="brand-title">E-Scooter Go</div>
+          <div class="brand-subtitle">Central de operações da frota</div>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn-ghost" title="Atualizar dados do servidor" onclick="carregarDadosDoServidor()">
+          <i class="fa-solid fa-rotate"></i>
+        </button>
+
+        <button class="btn-sair" onclick="logout()">
+          <i class="fa-solid fa-right-from-bracket"></i>
+          Sair
+        </button>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Resumo da frota -->
+      <section class="status">
+        <div class="status-linha">
+          <span class="status-badge badge-livre">
+            Disponível: <b id="qtdLivre">0</b>
+          </span>
+
+          <span class="status-badge badge-locado">
+            Alugado: <b id="qtdLocado">0</b>
+          </span>
+
+          <span class="status-badge badge-manutencao">
+            Manutenção: <b id="qtdManutencao">0</b>
+          </span>
+        </div>
+      </section>
+
+      <!-- Lista de patinetes -->
+      <section class="fleet-box">
+        <div class="section-header">
+          <div>
+            <h3>Frota</h3>
+            <span class="section-subtitle" id="contadorResultados">0 resultado(s)</span>
+          </div>
+
+          <div class="fleet-actions">
+            <button class="btn-frota-action" data-admin-only onclick="abrirClientes()">Clientes</button>
+            <button class="btn-frota-locacao" onclick="abrirNovaLocacaoGeral()">
+              <i class="fa-solid fa-play"></i> Nova Locação
+            </button>
+            <button class="btn-frota-action" data-admin-only onclick="abrirModalAdicionarPatinetes()">
+              <i class="fa-solid fa-plus"></i> Adicionar
+            </button>
+            <button class="btn-frota-action" data-admin-only onclick="abrirModalRemoverPatinete()">
+              <i class="fa-solid fa-minus"></i> Remover
+            </button>
+          </div>
+        </div>
+
+        <div class="grid" id="grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL PRINCIPAL -->
+  <div class="modal" id="modal">
+    <div class="modal-content" id="modalContent"></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- NAVEGAÇÃO INFERIOR -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" onclick="navegarComAnimacao('patinete.html')">
+      <i class="fa-solid fa-bicycle" aria-hidden="true"></i>
+      <small>Patinetes</small>
+    </button>
+
+    <button class="nav-item" onclick="navegarComAnimacao('pontos.html')">
+      <i class="fa-solid fa-location-dot"></i>
+      <small>Pontos</small>
+    </button>
+
+    <button class="nav-item" onclick="navegarComAnimacao('relatorio.html')">
+      <i class="fa-solid fa-chart-pie"></i>
+      <small>Relatórios</small>
+    </button>
+
+    <button class="nav-item" onclick="navegarComAnimacao('admin.html')">
+      <i class="fa-solid fa-user-shield"></i>
+      <small>Admin</small>
+    </button>
+  </nav>
+
+  <script src="js/common.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/patijs.js"></script>
+</body>
+</html>

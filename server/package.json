@@ -1,0 +1,18 @@
+{
+  "name": "escooter-go-server",
+  "version": "1.0.0",
+  "description": "Backend da plataforma E-Scooter Go",
+  "main": "server.js",
+  "scripts": {
+    "check": "node --check server.js && node --check database.js",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}
