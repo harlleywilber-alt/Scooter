@@ -49,7 +49,7 @@ function assinarToken(usuario) {
   return `${payload}.${assinatura}`;
 }
 
-function autenticarRequisicao(req, res, next) {
+async function autenticarRequisicao(req, res, next) {
   const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   const [payload, assinatura] = token.split(".");
   if (!payload || !assinatura) return res.status(401).json({ erro: "Autenticação necessária." });
@@ -59,10 +59,10 @@ function autenticarRequisicao(req, res, next) {
   try {
     const usuario = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (!usuario.exp || usuario.exp < Date.now()) return res.status(401).json({ erro: "Sessão expirada." });
-    const usuarioAtual = db.obterUsuarioSessao(usuario.id);
+    const usuarioAtual = await db.obterUsuarioSessao(usuario.id);
     if (!usuarioAtual || usuarioAtual.status !== "aprovado" || usuarioAtual.bloqueado) return res.status(401).json({ erro: "Conta sem acesso ao sistema." });
     req.usuario = { ...usuario, ...usuarioAtual };
-    db.registrarAtividadeUsuario(usuarioAtual.id);
+    await db.registrarAtividadeUsuario(usuarioAtual.id);
     next();
   } catch {
     return res.status(401).json({ erro: "Sessão inválida." });
@@ -90,7 +90,7 @@ function validarTexto(valor, campo, maximo = 120) {
 // 1. ROTAS DE AUTENTICAÇÃO E USUÁRIOS
 // ==========================================
 
-app.post("/api/auth/cadastro", (req, res) => {
+app.post("/api/auth/cadastro", async (req, res) => {
   try {
     const { nome, usuario, senha } = req.body;
 
@@ -108,7 +108,7 @@ app.post("/api/auth/cadastro", (req, res) => {
 
     const nomeValidado = validarTexto(nome, "Nome", 100);
     if (!/^[a-zA-Z0-9._-]+$/.test(usuario)) return res.status(400).json({ erro: "O usuário deve conter apenas letras, números, ponto, hífen ou sublinhado." });
-    const novoUsuario = db.cadastrarUsuario(nomeValidado, usuario.trim(), senha);
+    const novoUsuario = await db.cadastrarUsuario(nomeValidado, usuario.trim(), senha);
     return res.status(201).json({
       mensagem: "Cadastro realizado com sucesso! Aguarde a aprovação do administrador para acessar o sistema.",
       usuario: novoUsuario
@@ -118,7 +118,7 @@ app.post("/api/auth/cadastro", (req, res) => {
   }
 });
 
-app.post("/api/auth/login", limitarLogin, (req, res) => {
+app.post("/api/auth/login", limitarLogin, async (req, res) => {
   try {
     const { usuario, senha } = req.body;
 
@@ -126,7 +126,7 @@ app.post("/api/auth/login", limitarLogin, (req, res) => {
       return res.status(400).json({ erro: "Informe usuário e senha." });
     }
 
-    const authResultado = db.autenticarUsuario(usuario, senha);
+    const authResultado = await db.autenticarUsuario(usuario, senha);
     if (authResultado.erro) {
       return res.status(401).json({ erro: authResultado.erro });
     }
@@ -144,16 +144,16 @@ app.post("/api/auth/login", limitarLogin, (req, res) => {
   }
 });
 
-app.get("/api/admin/usuarios", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/admin/usuarios", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const usuarios = db.listarUsuarios();
+    const usuarios = await db.listarUsuarios();
     res.json(usuarios);
   } catch (error) {
     res.status(500).json({ erro: "Erro ao listar usuários." });
   }
 });
 
-app.put("/api/admin/usuarios/:id/status", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.put("/api/admin/usuarios/:id/status", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -162,7 +162,7 @@ app.put("/api/admin/usuarios/:id/status", autenticarRequisicao, somenteAdmin, (r
       return res.status(400).json({ erro: "Status inválido. Use 'aprovado' ou 'recusado'." });
     }
 
-    const atualizado = db.alterarStatusUsuario(id, status, req.usuario.usuario);
+    const atualizado = await db.alterarStatusUsuario(id, status, req.usuario.usuario);
     res.json({
       mensagem: `Status do usuário atualizado para '${status}' com sucesso!`,
       usuario: atualizado
@@ -172,49 +172,49 @@ app.put("/api/admin/usuarios/:id/status", autenticarRequisicao, somenteAdmin, (r
   }
 });
 
-app.put("/api/admin/usuarios/:id/nivel", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.put("/api/admin/usuarios/:id/nivel", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { nivel } = req.body;
     if (!["administrador", "operador"].includes(nivel)) {
       return res.status(400).json({ erro: "Nível de acesso inválido." });
     }
-    const usuario = db.alterarNivelUsuario(req.params.id, nivel, req.usuario.usuario);
+    const usuario = await db.alterarNivelUsuario(req.params.id, nivel, req.usuario.usuario);
     res.json({ mensagem: "Nível de acesso atualizado com sucesso!", usuario });
   } catch (error) {
     res.status(400).json({ erro: error.message });
   }
 });
 
-app.put("/api/admin/usuarios/:id/ponto", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.put("/api/admin/usuarios/:id/ponto", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const usuario = db.alterarPontoUsuario(req.params.id, req.body.pontoId, req.usuario.usuario);
+    const usuario = await db.alterarPontoUsuario(req.params.id, req.body.pontoId, req.usuario.usuario);
     res.json({ mensagem: "Ponto de trabalho atualizado com sucesso!", usuario });
   } catch (error) {
     res.status(400).json({ erro: error.message });
   }
 });
 
-app.put("/api/admin/usuarios/:id/bloqueio", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.put("/api/admin/usuarios/:id/bloqueio", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const usuario = db.alterarBloqueioUsuario(req.params.id, Boolean(req.body.bloqueado), req.usuario.usuario);
+    const usuario = await db.alterarBloqueioUsuario(req.params.id, Boolean(req.body.bloqueado), req.usuario.usuario);
     res.json({ mensagem: usuario.bloqueado ? "Operador bloqueado temporariamente." : "Operador desbloqueado.", usuario });
   } catch (error) {
     res.status(400).json({ erro: error.message });
   }
 });
 
-app.delete("/api/admin/usuarios/:id", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.delete("/api/admin/usuarios/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const usuario = db.excluirUsuarioRecusado(req.params.id, req.usuario.usuario);
+    const usuario = await db.excluirUsuarioRecusado(req.params.id, req.usuario.usuario);
     res.json({ mensagem: "Cadastro recusado excluído com sucesso!", usuario });
   } catch (error) {
     res.status(400).json({ erro: error.message });
   }
 });
 
-app.get("/api/admin/historico-usuarios", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/admin/historico-usuarios", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    res.json(db.listarHistoricoUsuarios());
+    res.json(await db.listarHistoricoUsuarios());
   } catch (error) {
     res.status(500).json({ erro: "Erro ao listar o histórico de usuários." });
   }
@@ -224,23 +224,23 @@ app.get("/api/admin/historico-usuarios", autenticarRequisicao, somenteAdmin, (re
 // 2. ROTAS DE PONTOS DE DISTRIBUIÇÃO
 // ==========================================
 
-app.get("/api/pontos", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/pontos", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const pontos = db.listarPontos();
+    const pontos = await db.listarPontos();
     res.json(pontos);
   } catch (error) {
     res.status(500).json({ erro: "Erro ao listar pontos de distribuição." });
   }
 });
 
-app.post("/api/pontos", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.post("/api/pontos", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { nome, localizacao } = req.body;
     if (!nome || !nome.trim()) {
       return res.status(400).json({ erro: "O nome do ponto é obrigatório." });
     }
 
-    const novoPonto = db.adicionarPonto(validarTexto(nome, "Nome", 100), validarTexto(localizacao || "Sem localização", "Localização", 180));
+    const novoPonto = await db.adicionarPonto(validarTexto(nome, "Nome", 100), validarTexto(localizacao || "Sem localização", "Localização", 180));
     res.status(201).json({
       mensagem: `Ponto '${novoPonto.nome}' cadastrado com sucesso!`,
       ponto: novoPonto
@@ -250,10 +250,10 @@ app.post("/api/pontos", autenticarRequisicao, somenteAdmin, (req, res) => {
   }
 });
 
-app.delete("/api/pontos/:id", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.delete("/api/pontos/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const removido = db.removerPonto(id);
+    const removido = await db.removerPonto(id);
     res.json({
       mensagem: `Ponto '${removido.nome}' removido com sucesso!`,
       ponto: removido
@@ -267,29 +267,30 @@ app.delete("/api/pontos/:id", autenticarRequisicao, somenteAdmin, (req, res) => 
 // 3. ROTAS DE PATINETES (FROTA)
 // ==========================================
 
-app.get("/api/patinetes", autenticarRequisicao, (req, res) => {
+app.get("/api/patinetes", autenticarRequisicao, async (req, res) => {
   try {
     const pontoId = req.usuario.nivel === "operador" ? req.usuario.pontoId : null;
-    const patinetes = req.usuario.nivel === "operador" && !pontoId ? [] : db.listarPatinetes(pontoId);
+    const patinetes = req.usuario.nivel === "operador" && !pontoId ? [] : await db.listarPatinetes(pontoId);
     res.json(patinetes);
   } catch (error) {
     res.status(500).json({ erro: "Erro ao listar patinetes." });
   }
 });
 
-app.get("/api/patinetes/:id/historico", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/patinetes/:id/historico", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    res.json(db.obterHistoricoPatinete(req.params.id));
+    const historico = await db.obterHistoricoPatinete(req.params.id);
+    res.json(historico);
   } catch (error) {
     res.status(404).json({ erro: error.message });
   }
 });
 
-app.post("/api/patinetes", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.post("/api/patinetes", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { quantidade, pontoId } = req.body;
     const qtd = parseInt(quantidade) || 1;
-    const criados = db.adicionarPatinetes(qtd, pontoId);
+    const criados = await db.adicionarPatinetes(qtd, pontoId);
     res.status(201).json({
       mensagem: `${qtd} patinete(s) adicionado(s) à frota com sucesso!`,
       patinetes: criados
@@ -299,10 +300,10 @@ app.post("/api/patinetes", autenticarRequisicao, somenteAdmin, (req, res) => {
   }
 });
 
-app.delete("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.delete("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const removido = db.removerPatinete(id);
+    const removido = await db.removerPatinete(id);
     res.json({
       mensagem: `Patinete ${removido.codigo} removido da frota com sucesso!`,
       patinete: removido
@@ -312,10 +313,10 @@ app.delete("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, (req, res) 
   }
 });
 
-app.put("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.put("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const atualizado = db.atualizarPatinete(id, req.body);
+    const atualizado = await db.atualizarPatinete(id, req.body);
     res.json({
       mensagem: "Patinete atualizado com sucesso!",
       patinete: atualizado
@@ -329,36 +330,38 @@ app.put("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, (req, res) => 
 // 4. ROTAS DE LOCAÇÕES
 // ==========================================
 
-app.get("/api/clientes", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/clientes", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    res.json(db.listarClientes());
+    const clientes = await db.listarClientes();
+    res.json(clientes);
   } catch (error) {
     res.status(500).json({ erro: "Erro ao listar clientes." });
   }
 });
 
-app.get("/api/clientes/:id/historico", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/clientes/:id/historico", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    res.json(db.obterHistoricoCliente(req.params.id));
+    const historico = await db.obterHistoricoCliente(req.params.id);
+    res.json(historico);
   } catch (error) {
     res.status(404).json({ erro: error.message });
   }
 });
 
-app.get("/api/locacoes", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/locacoes", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const locacoes = db.listarLocacoes();
+    const locacoes = await db.listarLocacoes();
     res.json(locacoes);
   } catch (error) {
     res.status(500).json({ erro: "Erro ao listar locações." });
   }
 });
 
-app.post("/api/locacoes/iniciar", autenticarRequisicao, somenteOperacao, (req, res) => {
+app.post("/api/locacoes/iniciar", autenticarRequisicao, somenteOperacao, async (req, res) => {
   try {
     const { patineteId, patineteIds, cliente, telefone, tempo, valorBase, pagamento } = req.body;
     const idsSelecionados = Array.isArray(patineteIds) ? patineteIds : [patineteId];
-    const configuracoes = db.obterConfig();
+    const configuracoes = await db.obterConfig();
 
     if (!idsSelecionados.length || idsSelecionados.some(id => !id) || !cliente || !tempo || !pagamento) {
       return res.status(400).json({ erro: "Campos obrigatórios ausentes para iniciar a locação." });
@@ -379,7 +382,7 @@ app.post("/api/locacoes/iniciar", autenticarRequisicao, somenteOperacao, (req, r
       return res.status(403).json({ erro: "Este patinete não pertence ao seu ponto de trabalho." });
     }
 
-    const { patinetes, locacoes } = db.iniciarLocacoes(
+    const { patinetes, locacoes } = await db.iniciarLocacoes(
       idsSelecionados,
       validarTexto(cliente, "Cliente", 100),
       telefone || "",
@@ -401,14 +404,14 @@ app.post("/api/locacoes/iniciar", autenticarRequisicao, somenteOperacao, (req, r
   }
 });
 
-app.post("/api/locacoes/finalizar", autenticarRequisicao, somenteOperacao, (req, res) => {
+app.post("/api/locacoes/finalizar", autenticarRequisicao, somenteOperacao, async (req, res) => {
   try {
     const { patineteId, multa } = req.body;
     if (!patineteId) {
       return res.status(400).json({ erro: "ID do patinete é obrigatório." });
     }
 
-    const patineteSolicitado = db.buscarPatinetePorId(patineteId);
+    const patineteSolicitado = await db.buscarPatinetePorId(patineteId);
     if (!patineteSolicitado) {
       return res.status(404).json({ erro: "Patinete não encontrado." });
     }
@@ -417,7 +420,7 @@ app.post("/api/locacoes/finalizar", autenticarRequisicao, somenteOperacao, (req,
       return res.status(403).json({ erro: "Este patinete não pertence ao seu ponto de trabalho." });
     }
 
-    const { patinete, locacao } = db.finalizarLocacao(patineteId, multa);
+    const { patinete, locacao } = await db.finalizarLocacao(patineteId, multa);
     res.json({
       mensagem: `Patinete ${patinete.codigo} devolvido com sucesso!`,
       patinete,
@@ -432,28 +435,28 @@ app.post("/api/locacoes/finalizar", autenticarRequisicao, somenteOperacao, (req,
 // 5. ROTAS DE MANUTENÇÃO
 // ==========================================
 
-app.get("/api/manutencoes", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/manutencoes", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    res.json(db.listarManutencoes());
+    res.json(await db.listarManutencoes());
   } catch (error) {
     res.status(500).json({ erro: "Erro ao listar manutenções." });
   }
 });
 
-app.post("/api/manutencoes", autenticarRequisicao, somenteOperacao, (req, res) => {
+app.post("/api/manutencoes", autenticarRequisicao, somenteOperacao, async (req, res) => {
   try {
     const { patineteId, descricao, valor } = req.body;
     if (!patineteId || !descricao) {
       return res.status(400).json({ erro: "Patinete e descrição são obrigatórios." });
     }
 
-    const patineteSolicitado = db.buscarPatinetePorId(patineteId);
+    const patineteSolicitado = await db.buscarPatinetePorId(patineteId);
     if (req.usuario.nivel === "operador" && (!req.usuario.pontoId || patineteSolicitado?.pontoId !== req.usuario.pontoId)) {
       return res.status(403).json({ erro: "Este patinete não pertence ao seu ponto de trabalho." });
     }
 
     const valorPermitido = req.usuario.nivel === "administrador" ? valor : 0;
-    const { patinete, manutencao } = db.registrarManutencao(
+    const { patinete, manutencao } = await db.registrarManutencao(
       patineteId,
       validarTexto(descricao, "Descrição", 300),
       valorPermitido,
@@ -469,10 +472,10 @@ app.post("/api/manutencoes", autenticarRequisicao, somenteOperacao, (req, res) =
   }
 });
 
-app.post("/api/manutencoes/liberar", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.post("/api/manutencoes/liberar", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { patineteId } = req.body;
-    const patinete = db.liberarManutencao(patineteId);
+    const patinete = await db.liberarManutencao(patineteId);
     res.json({
       mensagem: `Patinete ${patinete.codigo} revisado, 100% carregado e liberado para a frota!`,
       patinete
@@ -482,40 +485,40 @@ app.post("/api/manutencoes/liberar", autenticarRequisicao, somenteAdmin, (req, r
   }
 });
 
-app.put("/api/admin/manutencoes/:id", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.put("/api/admin/manutencoes/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const manutencao = db.atualizarManutencao(req.params.id, req.body || {});
+    const manutencao = await db.atualizarManutencao(req.params.id, req.body || {});
     res.json({ mensagem: manutencao.status === "concluida" ? "Manutenção concluída e patinete liberado." : "Manutenção atualizada.", manutencao });
   } catch (error) {
     res.status(400).json({ erro: error.message });
   }
 });
 
-app.get("/api/configuracoes", autenticarRequisicao, (req, res) => {
-  res.json(db.obterConfig());
+app.get("/api/configuracoes", autenticarRequisicao, async (req, res) => {
+  res.json(await db.obterConfig());
 });
 
 // ==========================================
 // 6. ROTAS DE RELATÓRIOS & EXPORTAÇÃO
 // ==========================================
 
-app.get("/api/relatorios/resumo", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/relatorios/resumo", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { mes } = req.query;
-    const resumo = db.obterResumoGeral(mes || null);
+    const resumo = await db.obterResumoGeral(mes || null);
     res.json(resumo);
   } catch (error) {
     res.status(500).json({ erro: "Erro ao consolidar resumo dos relatórios." });
   }
 });
 
-app.get("/api/relatorios/exportar/faturamento", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/relatorios/exportar/faturamento", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { periodo, mes } = req.query;
     const agora = new Date();
     const mesAtualStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
 
-    let locacoes = db.listarLocacoes();
+    let locacoes = await db.listarLocacoes();
     let nomeArquivo = "faturamento-historico-completo.csv";
 
     if (mes && mes.match(/^\d{4}-\d{2}$/)) {
@@ -541,9 +544,9 @@ app.get("/api/relatorios/exportar/faturamento", autenticarRequisicao, somenteAdm
   }
 });
 
-app.get("/api/relatorios/exportar/frota", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/relatorios/exportar/frota", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const resumo = db.obterResumoGeral("todos");
+    const resumo = await db.obterResumoGeral("todos");
     let csv = "ID;Código;Modelo;Ponto de Distribuição;Bateria (%);Status Atual;Total de Locações;Faturamento Gerado (R$);Gasto com Manutenção (R$);Lucro Líquido (R$)\n";
 
     resumo.usoPorPatinete.forEach(p => {
@@ -558,9 +561,9 @@ app.get("/api/relatorios/exportar/frota", autenticarRequisicao, somenteAdmin, (r
   }
 });
 
-app.get("/api/relatorios/exportar/pontos", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/relatorios/exportar/pontos", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const pontos = db.listarPontos();
+    const pontos = await db.listarPontos();
     let csv = "ID;Nome do Ponto;Localização / Endereço;Total Patinetes;Patinetes Livres;Patinetes Alugados;Em Manutenção;Data de Cadastro\n";
 
     pontos.forEach(p => {
@@ -580,11 +583,11 @@ app.get("/api/relatorios/exportar/pontos", autenticarRequisicao, somenteAdmin, (
 // 7. ROTAS DE ADMINISTRAÇÃO E PAINEL
 // ==========================================
 
-app.get("/api/admin/stats", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/admin/stats", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { mes } = req.query;
-    const resumo = db.obterResumoGeral(mes || null);
-    const config = db.obterConfig();
+    const resumo = await db.obterResumoGeral(mes || null);
+    const config = await db.obterConfig();
 
     res.json({
       periodo: resumo.periodo,
@@ -609,15 +612,15 @@ app.get("/api/admin/stats", autenticarRequisicao, somenteAdmin, (req, res) => {
   }
 });
 
-app.get("/api/admin/central", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.get("/api/admin/central", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    res.json(db.obterPainelOperacional());
+    res.json(await db.obterPainelOperacional());
   } catch (error) {
     res.status(500).json({ erro: "Erro ao montar a central administrativa." });
   }
 });
 
-app.put("/api/admin/configuracoes", autenticarRequisicao, somenteAdmin, (req, res) => {
+app.put("/api/admin/configuracoes", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const tempos = Array.isArray(req.body.temposDisponiveis)
       ? [...new Set(req.body.temposDisponiveis.map(Number).filter(valor => Number.isInteger(valor) && valor > 0 && valor <= 1440))].sort((a, b) => a - b)
@@ -629,7 +632,7 @@ app.put("/api/admin/configuracoes", autenticarRequisicao, somenteAdmin, (req, re
       if (!Number.isFinite(preco) || preco <= 0) throw new Error(`Preço inválido para ${tempo} minutos.`);
       precos[tempo] = preco;
     });
-    const configuracoes = db.salvarConfig({
+    const configuracoes = await db.salvarConfig({
       nomeEmpresa: validarTexto(req.body.nomeEmpresa, "Nome da empresa", 100),
       temposDisponiveis: tempos,
       precos,

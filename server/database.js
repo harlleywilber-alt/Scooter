@@ -1,18 +1,16 @@
-const fs = require("fs");
-const path = require("path");
 const crypto = require("crypto");
+const { Pool } = require("pg");
 
-// Caminho do arquivo de banco de dados
-const dataDir = path.resolve(__dirname, "..", "data");
-const dbPath = path.join(dataDir, "database.json");
-
-// Garante que o diretório 'data' existe
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+const pool = new Pool({
+  host: "localhost",
+  port: 5432,
+  database: "escooter",
+  user: "postgres",
+  password: "postgres"
+});
 
 // Funções de Criptografia Segura (Hash com Salt via PBKDF2)
-function gerarSalt() {
+async function gerarSalt() {
   return crypto.randomBytes(16).toString("hex");
 }
 
@@ -28,19 +26,19 @@ const CONFIG_PADRAO = {
   alertaManutencaoDias: 3
 };
 
-function hashSenha(senha, salt, iteracoes = ITERACOES_SENHA) {
+async function hashSenha(senha, salt, iteracoes = ITERACOES_SENHA) {
   return crypto.pbkdf2Sync(senha, salt, iteracoes, 64, "sha512").toString("hex");
 }
 
-function verificarSenha(senhaDigitada, hashArmazenado, salt, iteracoes = ITERACOES_SENHA) {
-  const hashTeste = hashSenha(senhaDigitada, salt, iteracoes);
+async function verificarSenha(senhaDigitada, hashArmazenado, salt, iteracoes = ITERACOES_SENHA) {
+  const hashTeste = await hashSenha(senhaDigitada, salt, iteracoes);
   return hashTeste.length === hashArmazenado.length && crypto.timingSafeEqual(Buffer.from(hashTeste), Buffer.from(hashArmazenado));
 }
 
 // Estrutura inicial do Banco de Dados
-function obterEstadoInicial() {
-  const saltAdmin = gerarSalt();
-  const senhaHashAdmin = hashSenha("admin123", saltAdmin);
+async function obterEstadoInicial() {
+  const saltAdmin = await gerarSalt();
+  const senhaHashAdmin = await hashSenha("admin123", saltAdmin);
 
   return {
     usuarios: [
@@ -98,23 +96,25 @@ function obterEstadoInicial() {
 }
 
 // Leitura e Escrita Síncrona Segura
-function lerDB() {
+async function lerDB() {
   try {
-    if (!fs.existsSync(dbPath)) {
-      const inicial = obterEstadoInicial();
-      salvarDB(inicial);
-      return inicial;
-    }
-    const dados = fs.readFileSync(dbPath, "utf-8");
-    const db = JSON.parse(dados);
+    const resultado = await pool.query(
+      "SELECT dados FROM sistema WHERE id = 1"
+    );
 
-    if (!db.pontos || !Array.isArray(db.pontos)) {
-      db.pontos = [
-        { id: 1, nome: "Uni goias", localizacao: "-16.691576, -49.310984", criadoEm: new Date().toISOString() },
-        { id: 2, nome: "Hidrolandia", localizacao: "Praça lago", criadoEm: new Date().toISOString() },
-        { id: 3, nome: "Teste", localizacao: "Sem localização", criadoEm: new Date().toISOString() }
-      ];
-      salvarDB(db);
+    let db;
+    if (resultado.rows.length === 0) {
+      db = await obterEstadoInicial();
+
+      await pool.query(
+        `
+        INSERT INTO sistema (id, dados, atualizado_em)
+        VALUES (1, $1, CURRENT_TIMESTAMP)
+        `,
+        [db]
+      );
+    } else {
+      db = resultado.rows[0].dados;
     }
 
     if (!Array.isArray(db.historicoUsuarios)) db.historicoUsuarios = [];
@@ -140,25 +140,38 @@ function lerDB() {
     };
 
     return db;
+
   } catch (error) {
     console.error("Erro ao ler banco de dados:", error);
-    return obterEstadoInicial();
+    return await obterEstadoInicial();
   }
 }
 
-function salvarDB(dados) {
+async function salvarDB(dados) {
   try {
-    fs.writeFileSync(dbPath, JSON.stringify(dados, null, 2), "utf-8");
+    await pool.query(
+      `
+      INSERT INTO sistema (id, dados, atualizado_em)
+      VALUES (1, $1, CURRENT_TIMESTAMP)
+      ON CONFLICT (id)
+      DO UPDATE SET
+        dados = EXCLUDED.dados,
+        atualizado_em = CURRENT_TIMESTAMP
+      `,
+      [dados]
+    );
+
     return true;
+
   } catch (error) {
-    console.error("Erro ao salvar banco de dados:", error);
+    console.error("Erro ao salvar no PostgreSQL:", error);
     return false;
   }
 }
 
 // --- USUÁRIOS & APROVAÇÃO ---
-function listarUsuarios() {
-  const db = lerDB();
+async function listarUsuarios() {
+  const db = await lerDB();
   return db.usuarios.map(u => ({
     id: u.id,
     nome: u.nome,
@@ -174,13 +187,14 @@ function listarUsuarios() {
   }));
 }
 
-function buscarUsuarioPorLogin(usuario) {
-  const db = lerDB();
+async function buscarUsuarioPorLogin(usuario) {
+  const db = await lerDB();
   return db.usuarios.find(u => u.usuario.toLowerCase() === usuario.toLowerCase());
 }
 
-function obterUsuarioSessao(id) {
-  const user = lerDB().usuarios.find(u => u.id === parseInt(id));
+async function obterUsuarioSessao(id) {
+  const db = await lerDB();
+  const user = db.usuarios.find(u => u.id === parseInt(id));
   if (!user) return null;
   return {
     id: user.id, nome: user.nome, usuario: user.usuario,
@@ -191,14 +205,14 @@ function obterUsuarioSessao(id) {
   };
 }
 
-function cadastrarUsuario(nome, usuario, senha) {
-  const db = lerDB();
+async function cadastrarUsuario(nome, usuario, senha) {
+  const db = await lerDB();
   if (buscarUsuarioPorLogin(usuario)) {
     throw new Error("Nome de usuário já cadastrado!");
   }
 
-  const salt = gerarSalt();
-  const senhaHash = hashSenha(senha, salt);
+  const salt = await gerarSalt();
+  const senhaHash = await hashSenha(senha, salt);
 
   const novoUsuario = {
     id: db.usuarios.length ? Math.max(...db.usuarios.map(u => u.id)) + 1 : 1,
@@ -215,7 +229,7 @@ function cadastrarUsuario(nome, usuario, senha) {
   };
 
   db.usuarios.push(novoUsuario);
-  salvarDB(db);
+  await salvarDB(db);
 
   return {
     id: novoUsuario.id,
@@ -226,18 +240,18 @@ function cadastrarUsuario(nome, usuario, senha) {
   };
 }
 
-function autenticarUsuario(usuario, senha) {
-  const db = lerDB();
+async function autenticarUsuario(usuario, senha) {
+  const db = await lerDB();
   const user = db.usuarios.find(u => u.usuario.toLowerCase() === usuario.toLowerCase());
   if (!user) return { erro: "Usuário ou senha inválidos." };
 
   const iteracoesAtuais = user.iteracoesSenha || 1000;
-  const senhaValida = verificarSenha(senha, user.senhaHash, user.salt, iteracoesAtuais);
+  const senhaValida = await verificarSenha(senha, user.senhaHash, user.salt, iteracoesAtuais);
   if (!senhaValida) return { erro: "Usuário ou senha inválidos." };
 
   if (iteracoesAtuais < ITERACOES_SENHA) {
-    user.salt = gerarSalt();
-    user.senhaHash = hashSenha(senha, user.salt);
+    user.salt = await gerarSalt();
+    user.senhaHash = await hashSenha(senha, user.salt);
     user.iteracoesSenha = ITERACOES_SENHA;
   }
 
@@ -259,7 +273,7 @@ function autenticarUsuario(usuario, senha) {
     id: Date.now(), acao: "login", usuarioId: user.id, usuarioNome: user.nome,
     responsavel: user.usuario, data: user.ultimoLogin
   });
-  salvarDB(db);
+  await salvarDB(db);
 
   return {
     usuario: {
@@ -274,30 +288,30 @@ function autenticarUsuario(usuario, senha) {
   };
 }
 
-function registrarAtividadeUsuario(id) {
-  const db = lerDB();
+async function registrarAtividadeUsuario(id) {
+  const db = await lerDB();
   const user = db.usuarios.find(u => u.id === parseInt(id));
   if (!user) return;
   const agora = Date.now();
   const ultima = new Date(user.ultimaAtividade || 0).getTime();
   if (!Number.isFinite(ultima) || agora - ultima >= 60000) {
     user.ultimaAtividade = new Date(agora).toISOString();
-    salvarDB(db);
+    await salvarDB(db);
   }
 }
 
-function alterarBloqueioUsuario(id, bloqueado, responsavel = "admin") {
-  const db = lerDB();
+async function alterarBloqueioUsuario(id, bloqueado, responsavel = "admin") {
+  const db = await lerDB();
   const user = db.usuarios.find(u => u.id === parseInt(id));
   if (!user) throw new Error("Usuário não encontrado.");
   if (user.usuario === "admin") throw new Error("O administrador principal não pode ser bloqueado.");
   user.bloqueado = Boolean(bloqueado);
-  registrarHistorico(db, user.bloqueado ? "bloqueio temporário" : "desbloqueio", user, responsavel);
-  salvarDB(db);
+  await registrarHistorico(db, user.bloqueado ? "bloqueio temporário" : "desbloqueio", user, responsavel);
+  await salvarDB(db);
   return { id: user.id, nome: user.nome, bloqueado: user.bloqueado };
 }
 
-function registrarHistorico(db, acao, user, responsavel = "admin", detalhes = "") {
+async function registrarHistorico(db, acao, user, responsavel = "admin", detalhes = "") {
   db.historicoUsuarios = db.historicoUsuarios || [];
   db.historicoUsuarios.unshift({
     id: Date.now(), acao, usuarioId: user.id, usuarioNome: user.nome,
@@ -305,8 +319,8 @@ function registrarHistorico(db, acao, user, responsavel = "admin", detalhes = ""
   });
 }
 
-function alterarStatusUsuario(id, novoStatus, responsavel = "admin") {
-  const db = lerDB();
+async function alterarStatusUsuario(id, novoStatus, responsavel = "admin") {
+  const db = await lerDB();
   const user = db.usuarios.find(u => u.id === parseInt(id));
   if (!user) throw new Error("Usuário não encontrado.");
   if (user.usuario === "admin") throw new Error("Não é possível alterar a conta do Administrador principal.");
@@ -315,8 +329,8 @@ function alterarStatusUsuario(id, novoStatus, responsavel = "admin") {
   }
 
   user.status = novoStatus;
-  registrarHistorico(db, novoStatus === "aprovado" ? "aprovação" : "recusa", user, responsavel);
-  salvarDB(db);
+  await registrarHistorico(db, novoStatus === "aprovado" ? "aprovação" : "recusa", user, responsavel);
+  await salvarDB(db);
 
   return {
     id: user.id,
@@ -326,21 +340,21 @@ function alterarStatusUsuario(id, novoStatus, responsavel = "admin") {
   };
 }
 
-function alterarNivelUsuario(id, nivel, responsavel = "admin") {
-  const db = lerDB();
+async function alterarNivelUsuario(id, nivel, responsavel = "admin") {
+  const db = await lerDB();
   const user = db.usuarios.find(u => u.id === parseInt(id));
   if (!user) throw new Error("Usuário não encontrado.");
   if (user.usuario === "admin") throw new Error("O nível do administrador principal não pode ser alterado.");
   const nivelAnterior = user.nivel || "operador";
   user.nivel = nivel;
   user.cargo = nivel === "administrador" ? "Administrador" : "Operador";
-  registrarHistorico(db, "alteração de nível", user, responsavel, `${nivelAnterior} para ${nivel}`);
-  salvarDB(db);
+  await registrarHistorico(db, "alteração de nível", user, responsavel, `${nivelAnterior} para ${nivel}`);
+  await salvarDB(db);
   return { id: user.id, nome: user.nome, usuario: user.usuario, nivel: user.nivel, status: user.status };
 }
 
-function alterarPontoUsuario(id, pontoId, responsavel = "admin") {
-  const db = lerDB();
+async function alterarPontoUsuario(id, pontoId, responsavel = "admin") {
+  const db = await lerDB();
   const user = db.usuarios.find(u => u.id === parseInt(id));
   if (!user) throw new Error("Usuário não encontrado.");
   if (user.usuario === "admin") throw new Error("O administrador principal não utiliza ponto operacional.");
@@ -348,31 +362,31 @@ function alterarPontoUsuario(id, pontoId, responsavel = "admin") {
   if (pontoId && !ponto) throw new Error("Ponto de distribuição não encontrado.");
   const pontoAnterior = user.pontoId || "sem ponto";
   user.pontoId = ponto ? ponto.id : null;
-  registrarHistorico(db, "alteração de ponto", user, responsavel, `${pontoAnterior} para ${ponto ? ponto.nome : "sem ponto"}`);
-  salvarDB(db);
+  await registrarHistorico(db, "alteração de ponto", user, responsavel, `${pontoAnterior} para ${ponto ? ponto.nome : "sem ponto"}`);
+  await salvarDB(db);
   return { id: user.id, nome: user.nome, usuario: user.usuario, pontoId: user.pontoId };
 }
 
-function excluirUsuarioRecusado(id, responsavel = "admin") {
-  const db = lerDB();
+async function excluirUsuarioRecusado(id, responsavel = "admin") {
+  const db = await lerDB();
   const index = db.usuarios.findIndex(u => u.id === parseInt(id));
   if (index < 0) throw new Error("Usuário não encontrado.");
   const user = db.usuarios[index];
   if (user.status !== "recusado") throw new Error("Somente cadastros recusados podem ser excluídos.");
-  registrarHistorico(db, "exclusão", user, responsavel, "Cadastro recusado removido");
+  await registrarHistorico(db, "exclusão", user, responsavel, "Cadastro recusado removido");
   db.usuarios.splice(index, 1);
-  salvarDB(db);
+  await salvarDB(db);
   return user;
 }
 
-function listarHistoricoUsuarios() {
-  const db = lerDB();
+async function listarHistoricoUsuarios() {
+  const db = await lerDB();
   return (db.historicoUsuarios || []).slice(0, 100);
 }
 
 // --- PONTOS DE DISTRIBUIÇÃO ---
-function listarPontos() {
-  const db = lerDB();
+async function listarPontos() {
+  const db = await lerDB();
   const patinetes = db.patinetes || [];
 
   return (db.pontos || []).map(ponto => {
@@ -395,8 +409,8 @@ function listarPontos() {
   });
 }
 
-function adicionarPonto(nome, localizacao) {
-  const db = lerDB();
+async function adicionarPonto(nome, localizacao) {
+  const db = await lerDB();
   if (!db.pontos) db.pontos = [];
 
   const novoPonto = {
@@ -407,7 +421,7 @@ function adicionarPonto(nome, localizacao) {
   };
 
   db.pontos.push(novoPonto);
-  salvarDB(db);
+  await salvarDB(db);
 
   return {
     ...novoPonto,
@@ -418,8 +432,8 @@ function adicionarPonto(nome, localizacao) {
   };
 }
 
-function removerPonto(id) {
-  const db = lerDB();
+async function removerPonto(id) {
+  const db = await lerDB();
   const index = (db.pontos || []).findIndex(p => p.id === parseInt(id));
   if (index === -1) throw new Error("Ponto de distribuição não encontrado");
 
@@ -436,23 +450,23 @@ function removerPonto(id) {
     if (usuario.pontoId === parseInt(id)) usuario.pontoId = null;
   });
 
-  salvarDB(db);
+  await salvarDB(db);
   return removido;
 }
 
 // --- PATINETES ---
-function listarPatinetes(pontoId = null) {
-  const db = lerDB();
+async function listarPatinetes(pontoId = null) {
+  const db = await lerDB();
   return pontoId ? db.patinetes.filter(p => p.pontoId === parseInt(pontoId)) : db.patinetes;
 }
 
-function buscarPatinetePorId(id) {
-  const db = lerDB();
+async function buscarPatinetePorId(id) {
+  const db = await lerDB();
   return db.patinetes.find(p => p.id === parseInt(id));
 }
 
-function adicionarPatinetes(qtd, pontoId = null) {
-  const db = lerDB();
+async function adicionarPatinetes(qtd, pontoId = null) {
+  const db = await lerDB();
   const ultimoId = db.patinetes.length ? Math.max(...db.patinetes.map(p => p.id)) : 0;
   const novos = [];
 
@@ -483,12 +497,12 @@ function adicionarPatinetes(qtd, pontoId = null) {
     novos.push(patinete);
   }
 
-  salvarDB(db);
+  await salvarDB(db);
   return novos;
 }
 
-function removerPatinete(id) {
-  const db = lerDB();
+async function removerPatinete(id) {
+  const db = await lerDB();
   const index = db.patinetes.findIndex(p => p.id === parseInt(id));
   if (index === -1) throw new Error("Patinete não encontrado");
 
@@ -497,12 +511,12 @@ function removerPatinete(id) {
   }
 
   const removido = db.patinetes.splice(index, 1)[0];
-  salvarDB(db);
+  await salvarDB(db);
   return removido;
 }
 
-function atualizarPatinete(id, dados) {
-  const db = lerDB();
+async function atualizarPatinete(id, dados) {
+  const db = await lerDB();
   const index = db.patinetes.findIndex(p => p.id === parseInt(id));
   if (index === -1) throw new Error("Patinete não encontrado");
 
@@ -519,13 +533,13 @@ function atualizarPatinete(id, dados) {
   }
 
   db.patinetes[index] = { ...db.patinetes[index], ...dados };
-  salvarDB(db);
+  await salvarDB(db);
   return db.patinetes[index];
 }
 
 // --- LOCAÇÕES ---
-function listarLocacoes() {
-  const db = lerDB();
+async function listarLocacoes() {
+  const db = await lerDB();
   return db.locacoes;
 }
 
@@ -551,8 +565,8 @@ function obterOuCriarCliente(db, nome, telefone) {
   return cliente;
 }
 
-function listarClientes() {
-  const db = lerDB();
+async function listarClientes() {
+  const db = await lerDB();
   return db.clientes.map(cliente => {
     const telefone = normalizarTelefone(cliente.telefone);
     const locacoes = db.locacoes.filter(locacao => locacao.clienteId === cliente.id ||
@@ -567,8 +581,8 @@ function listarClientes() {
   });
 }
 
-function obterHistoricoCliente(id) {
-  const db = lerDB();
+async function obterHistoricoCliente(id) {
+  const db = await lerDB();
   const cliente = db.clientes.find(c => c.id === parseInt(id));
   if (!cliente) throw new Error("Cliente não encontrado.");
   const telefone = normalizarTelefone(cliente.telefone);
@@ -577,8 +591,8 @@ function obterHistoricoCliente(id) {
   return { cliente, locacoes: locacoes.sort((a, b) => new Date(b.dataInicio) - new Date(a.dataInicio)) };
 }
 
-function obterHistoricoPatinete(id) {
-  const db = lerDB();
+async function obterHistoricoPatinete(id) {
+  const db = await lerDB();
   const patinete = db.patinetes.find(p => p.id === parseInt(id));
   if (!patinete) throw new Error("Patinete não encontrado.");
   const eventos = [
@@ -594,8 +608,8 @@ function obterHistoricoPatinete(id) {
   return { patinete, eventos };
 }
 
-function iniciarLocacoes(patineteIds, cliente, telefone, tempo, valorBase, pagamento, usuarioOperador = "Operador") {
-  const db = lerDB();
+async function iniciarLocacoes(patineteIds, cliente, telefone, tempo, valorBase, pagamento, usuarioOperador = "Operador") {
+  const db = await lerDB();
   const ids = [...new Set(patineteIds.map(Number))];
   if (!ids.length) throw new Error("Selecione pelo menos um patinete.");
 
@@ -627,12 +641,12 @@ function iniciarLocacoes(patineteIds, cliente, telefone, tempo, valorBase, pagam
   });
 
   db.locacoes.push(...locacoes);
-  salvarDB(db);
+  await salvarDB(db);
   return { patinetes, locacoes };
 }
 
-function finalizarLocacao(patineteId, multa = 0) {
-  const db = lerDB();
+async function finalizarLocacao(patineteId, multa = 0) {
+  const db = await lerDB();
   const pIndex = db.patinetes.findIndex(p => p.id === parseInt(patineteId));
   if (pIndex === -1) throw new Error("Patinete não encontrado");
 
@@ -661,18 +675,18 @@ function finalizarLocacao(patineteId, multa = 0) {
   patinete.inicio = null;
   patinete.bateria = novaBateria;
 
-  salvarDB(db);
+  await salvarDB(db);
   return { patinete, locacao };
 }
 
 // --- MANUTENÇÕES ---
-function listarManutencoes() {
-  const db = lerDB();
+async function listarManutencoes() {
+  const db = await lerDB();
   return db.manutencoes;
 }
 
-function registrarManutencao(patineteId, descricao, valor, usuario = "Operador") {
-  const db = lerDB();
+async function registrarManutencao(patineteId, descricao, valor, usuario = "Operador") {
+  const db = await lerDB();
   const pIndex = db.patinetes.findIndex(p => p.id === parseInt(patineteId));
   if (pIndex === -1) throw new Error("Patinete não encontrado");
 
@@ -697,13 +711,13 @@ function registrarManutencao(patineteId, descricao, valor, usuario = "Operador")
   };
 
   db.manutencoes.push(novaManutencao);
-  salvarDB(db);
+  await salvarDB(db);
 
   return { patinete, manutencao: novaManutencao };
 }
 
-function atualizarManutencao(id, dados = {}) {
-  const db = lerDB();
+async function atualizarManutencao(id, dados = {}) {
+  const db = await lerDB();
   const manutencao = db.manutencoes.find(item => item.id === parseInt(id));
   if (!manutencao) throw new Error("Manutenção não encontrada.");
   const prioridades = ["baixa", "media", "urgente"];
@@ -725,12 +739,12 @@ function atualizarManutencao(id, dados = {}) {
       patinete.bateria = 100;
     }
   }
-  salvarDB(db);
+  await salvarDB(db);
   return manutencao;
 }
 
-function liberarManutencao(patineteId) {
-  const db = lerDB();
+async function liberarManutencao(patineteId) {
+  const db = await lerDB();
   const pIndex = db.patinetes.findIndex(p => p.id === parseInt(patineteId));
   if (pIndex === -1) throw new Error("Patinete não encontrado");
 
@@ -746,18 +760,18 @@ function liberarManutencao(patineteId) {
     manutencao.dataLiberacao = new Date().toISOString();
   }
 
-  salvarDB(db);
+  await salvarDB(db);
   return patinete;
 }
 
 // --- CONFIGURAÇÕES & ADMIN ---
-function obterConfig() {
-  const db = lerDB();
+async function obterConfig() {
+  const db = await lerDB();
   return db.configuracoes;
 }
 
-function obterPainelOperacional() {
-  const db = lerDB();
+async function obterPainelOperacional() {
+  const db = await lerDB();
   const config = { ...CONFIG_PADRAO, ...(db.configuracoes || {}) };
   const agora = Date.now();
   const limiteManutencao = agora - Number(config.alertaManutencaoDias || 3) * 86400000;
@@ -810,16 +824,16 @@ function obterPainelOperacional() {
   };
 }
 
-function salvarConfig(config) {
-  const db = lerDB();
+async function salvarConfig(config) {
+  const db = await lerDB();
   db.configuracoes = { ...db.configuracoes, ...config };
-  salvarDB(db);
+  await salvarDB(db);
   return db.configuracoes;
 }
 
 // --- CONSOLIDADOR DE RELATÓRIOS ---
-function obterResumoGeral(mesFiltro = null) {
-  const db = lerDB();
+async function obterResumoGeral(mesFiltro = null) {
+  const db = await lerDB();
   const agora = new Date();
 
   const mesAtualStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
