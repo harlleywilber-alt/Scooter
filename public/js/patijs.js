@@ -477,7 +477,7 @@ function abrirModalManutencao(id) {
   const b = bikes.find(x => x.id === id);
   const c = document.getElementById("modalContent");
   const campoValor = usuarioEhAdministrador()
-    ? '<input id="valorManutencao" type="number" min="0" step="0.01" placeholder="Valor gasto estimado (R$)">' 
+    ? '<input id="valorManutencao" type="number" min="0" max="100000" step="0.01" placeholder="Valor gasto estimado (R$)">' 
     : "";
 
   c.innerHTML = `
@@ -496,19 +496,34 @@ function abrirModalManutencao(id) {
 async function confirmarEnviarManutencao(id) {
   const descricao = document.getElementById("motivoManutencao").value.trim();
   const campoValor = document.getElementById("valorManutencao");
-  const valor = campoValor ? parseFloat(campoValor.value) || 0 : 0;
+  const valor = campoValor ? Number(campoValor.value) : 0;
 
   if (!descricao || descricao.length < 3) {
     return mostrarToast("Informe o motivo da manutenção");
   }
 
+  // Validação do valor no frontend
+  if (!Number.isFinite(valor) || valor < 0 || valor > 100000) {
+    return mostrarToast(
+      "Valor da manutenção inválido. Informe um valor entre R$ 0,00 e R$ 100.000,00."
+    );
+  }
+
   try {
     const res = await api.registrarManutencao(id, descricao, valor);
+
     fecharModal();
-    mostrarToast(res.mensagem || "Patinete enviado para manutenção!");
+
+    mostrarToast(
+      res.mensagem || "Patinete enviado para manutenção!"
+    );
+
     await carregarDadosDoServidor();
+
   } catch (error) {
-    mostrarToast(error.message);
+    mostrarToast(
+      error.message || "Erro ao enviar patinete para manutenção."
+    );
   }
 }
 

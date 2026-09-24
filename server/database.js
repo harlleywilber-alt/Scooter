@@ -704,7 +704,7 @@ async function registrarManutencao(patineteId, descricao, valor, usuario = "Oper
     diagnostico: "",
     responsavelServico: "",
     previsaoConclusao: null,
-    valor: parseFloat(valor) || 0,
+    valor: Number(valor),
     usuario,
     status: "em_manutencao",
     data: new Date().toISOString()

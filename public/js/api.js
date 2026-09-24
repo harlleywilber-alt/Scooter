@@ -505,44 +505,78 @@ const api = {
 
   // Manutenções
   async registrarManutencao(patineteId, descricao, valor = 0) {
-    try {
-      const res = await apiFetch(`${API_BASE}/api/manutencoes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          patineteId,
-          descricao,
-          valor,
-          usuario: this.obterUsuarioLogado().nome
-        })
-      });
-      if (res.ok) return await res.json();
-    } catch (e) {}
-
-    const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
-    const manutencoes = obterStoreLocal("manutencoes", []);
-    const p = patinetes.find(b => b.id === parseInt(patineteId));
-
-    if (p) {
-      p.status = "manutencao";
-      manutencoes.push({
-        id: manutencoes.length + 1,
-        patineteId: p.id,
-        patineteCodigo: p.codigo || `PAT${p.id}`,
-        pontoNome: p.pontoNome || "Ponto",
+  try {
+    const res = await apiFetch(`${API_BASE}/api/manutencoes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        patineteId,
         descricao,
-        valor: parseFloat(valor) || 0,
-        usuario: this.obterUsuarioLogado().nome,
-        status: "concluida",
-        data: new Date().toISOString()
-      });
+        valor,
+        usuario: this.obterUsuarioLogado().nome
+      })
+    });
 
-      salvarStoreLocal("patinetes", patinetes);
-      salvarStoreLocal("manutencoes", manutencoes);
+    const dados = await res.json();
+
+    // Se o servidor recusou, mostra exatamente o erro do server.js
+    if (!res.ok) {
+      const erro = new Error(
+        dados.erro || "Erro ao enviar patinete para manutenção."
+      );
+
+      erro.respostaDoServidor = true;
+      throw erro;
     }
 
-    return { mensagem: "Patinete enviado para manutenção!" };
-  },
+    return dados;
+
+  } catch (e) {
+
+    // Se o servidor respondeu com erro, NÃO usa armazenamento local
+    if (e.respostaDoServidor) {
+      throw e;
+    }
+
+    // Somente usa contingência se realmente não conseguiu conectar ao servidor
+    console.warn("Servidor indisponível. Usando armazenamento local.", e);
+  }
+
+  // CONTINGÊNCIA LOCAL
+  const patinetes = obterStoreLocal(
+    "patinetes",
+    DADOS_LOCAIS_PADRAO.patinetes
+  );
+
+  const manutencoes = obterStoreLocal("manutencoes", []);
+
+  const p = patinetes.find(
+    b => b.id === parseInt(patineteId)
+  );
+
+  if (p) {
+    p.status = "manutencao";
+
+    manutencoes.push({
+      id: manutencoes.length + 1,
+      patineteId: p.id,
+      patineteCodigo: p.codigo || `PAT${p.id}`,
+      pontoNome: p.pontoNome || "Ponto",
+      descricao,
+      valor: Number(valor) || 0,
+      usuario: this.obterUsuarioLogado().nome,
+      status: "em_manutencao",
+      data: new Date().toISOString()
+    });
+
+    salvarStoreLocal("patinetes", patinetes);
+    salvarStoreLocal("manutencoes", manutencoes);
+  }
+
+  return {
+    mensagem: "Patinete enviado para manutenção!"
+  };
+},
 
   async liberarManutencao(patineteId) {
     try {

@@ -473,7 +473,7 @@ app.post("/api/manutencoes", autenticarRequisicao, somenteOperacao, async (req, 
     }
 
 
-    const valorPermitido = req.usuario.nivel === "administrador" ? valor : 0;
+    const valorPermitido = req.usuario.nivel === "administrador" ? valorNumerico : 0;
     const { patinete, manutencao } = await db.registrarManutencao(
       patineteId,
       validarTexto(descricao, "Descrição", 300),
