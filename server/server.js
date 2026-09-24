@@ -445,15 +445,33 @@ app.get("/api/manutencoes", autenticarRequisicao, somenteAdmin, async (req, res)
 
 app.post("/api/manutencoes", autenticarRequisicao, somenteOperacao, async (req, res) => {
   try {
-    const { patineteId, descricao, valor } = req.body;
+   const { patineteId, descricao, valor } = req.body;
+
+    // Validação dos campos obrigatórios
     if (!patineteId || !descricao) {
-      return res.status(400).json({ erro: "Patinete e descrição são obrigatórios." });
+      return res.status(400).json({
+        erro: "Patinete e descrição são obrigatórios."
+      });
+    }
+    // Converte o valor recebido para número
+    const valorNumerico = Number(valor);
+
+    // Validação do valor da manutenção
+    if (
+      !Number.isFinite(valorNumerico) ||
+      valorNumerico < 0 ||
+      valorNumerico > 100000
+    ) {
+      return res.status(400).json({
+        erro: "Valor da manutenção inválido. Informe um valor entre R$ 0,00 e R$ 100.000,00."
+      });
     }
 
     const patineteSolicitado = await db.buscarPatinetePorId(patineteId);
     if (req.usuario.nivel === "operador" && (!req.usuario.pontoId || patineteSolicitado?.pontoId !== req.usuario.pontoId)) {
       return res.status(403).json({ erro: "Este patinete não pertence ao seu ponto de trabalho." });
     }
+
 
     const valorPermitido = req.usuario.nivel === "administrador" ? valor : 0;
     const { patinete, manutencao } = await db.registrarManutencao(
