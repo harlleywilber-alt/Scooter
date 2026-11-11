@@ -1,6 +1,10 @@
+// E-Scooter GO - Login e cadastro de operadores
+
 let modoCadastro = false;
 
-/* ================== ERROS ================== */
+// ==========================================
+// ERROS
+// ==========================================
 
 function mostrarErro(id, msg) {
   const campo = document.getElementById(id);
@@ -26,7 +30,9 @@ function limparErros() {
   document.querySelectorAll("input").forEach(i => (i.style.outline = "none"));
 }
 
-/* ================== UI ================== */
+// ==========================================
+// UI
+// ==========================================
 
 function atualizarTelaModo() {
   const grupoNome = document.getElementById("grupoNome");
@@ -63,7 +69,9 @@ function alternarModo() {
   atualizarTelaModo();
 }
 
-/* ================== VALIDAÇÃO ================== */
+// ==========================================
+// VALIDAÇÃO
+// ==========================================
 
 function validarCadastro(nome, usuario, senha, confirmar) {
   let ok = true;
@@ -107,7 +115,9 @@ function validarLogin(usuario, senha) {
   return ok;
 }
 
-/* ================== CADASTRO (API + BANCO) ================== */
+// ==========================================
+// CADASTRO (API + BANCO)
+// ==========================================
 
 async function cadastrarUsuario() {
   limparErros();
@@ -138,7 +148,9 @@ async function cadastrarUsuario() {
   }
 }
 
-/* ================== LOGIN (API + BANCO) ================== */
+// ==========================================
+// LOGIN (API + BANCO)
+// ==========================================
 
 async function entrarSistema() {
   limparErros();
@@ -163,7 +175,9 @@ async function entrarSistema() {
   }
 }
 
-/* ================== BOTÃO PRINCIPAL ================== */
+// ==========================================
+// BOTÃO PRINCIPAL
+// ==========================================
 
 function acaoPrincipal() {
   if (modoCadastro) {
@@ -173,7 +187,9 @@ function acaoPrincipal() {
   }
 }
 
-/* ================== ENTER ================== */
+// ==========================================
+// ENTER
+// ==========================================
 
 document.addEventListener("keypress", function (e) {
   if (e.key === "Enter") {
@@ -181,6 +197,8 @@ document.addEventListener("keypress", function (e) {
   }
 });
 
-/* ================== INICIALIZAÇÃO ================== */
+// ==========================================
+// INICIALIZAÇÃO
+// ==========================================
 
 atualizarTelaModo();
