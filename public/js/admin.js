@@ -291,7 +291,7 @@ function abrirEditarManutencao(id) {
     <select id="manPrioridade"><option value="baixa">Baixa</option><option value="media">Média</option><option value="urgente">Urgente</option></select>
     <label>Diagnóstico</label><textarea id="manDiagnostico" rows="4" maxlength="500" placeholder="Resultado da avaliação técnica">${escaparHtml(item.diagnostico || "")}</textarea>
     <label>Responsável pelo serviço</label><input id="manResponsavel" maxlength="120" value="${escaparHtml(item.responsavelServico || "")}">
-    <label>Previsão de conclusão</label><input id="manPrevisao" type="datetime-local" value="${item.previsaoConclusao ? new Date(item.previsaoConclusao).toISOString().slice(0, 16) : ""}">
+    <label>Previsão de conclusão</label><input id="manPrevisao" type="datetime-local" value="${item.previsaoConclusao ? dataHoraLocalInput(item.previsaoConclusao) : ""}">
     <label>Custo final (R$)</label><input id="manCusto" type="number" min="0" step="0.01" value="${Number(item.valor || 0).toFixed(2)}">
     <div class="modal-actions-2"><button class="btn-salvar" onclick="salvarDetalhesManutencao(${id}, false)">Salvar</button><button class="btn-salvar" onclick="salvarDetalhesManutencao(${id}, true)">Concluir</button><button class="btn-reset" onclick="fecharModalAdmin()">Cancelar</button></div>`;
   document.getElementById("manPrioridade").value = item.prioridade || "media";
