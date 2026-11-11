@@ -1,3 +1,4 @@
+// E-Scooter GO - Servidor HTTP: API REST + arquivos do front-end (public/)
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -7,18 +8,25 @@ const db = require("./database");
 const conexao = require("./conexao");
 const { FORMAS_PAGAMENTO } = require("./inicializacao");
 
+// ==========================================
+// CONFIGURAÇÃO
+// ==========================================
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const pastaPublica = path.resolve(__dirname, "..", "public");
 
-// Middlewares
+const DURACAO_TOKEN_MS = 8 * 60 * 60 * 1000;
+const JANELA_LOGIN_MS = 15 * 60 * 1000;
+const MAX_TENTATIVAS_LOGIN = 20;
+const SENHA_MINIMA = 6;
+const MAX_PATINETES_POR_CADASTRO = 100;
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(pastaPublica));
 
-// Segredo dos tokens: variável AUTH_SECRET ou um arquivo local gerado uma vez
-// (server/.auth-secret, fora do git). Antes era gerado a cada start e todo
-// reinício do servidor deslogava todos os usuários.
+// Segredo das sessões: variável AUTH_SECRET ou arquivo local server/.auth-secret
 function obterSegredoAuth() {
   if (process.env.AUTH_SECRET) return process.env.AUTH_SECRET;
   const arquivo = path.join(__dirname, ".auth-secret");
@@ -30,35 +38,55 @@ function obterSegredoAuth() {
   try {
     fs.writeFileSync(arquivo, novo, { mode: 0o600 });
   } catch (error) {
-    console.warn("[AVISO] Não foi possível salvar server/.auth-secret; as sessões expiram ao reiniciar.", error.message);
+    console.warn("[AVISO] Não foi possível salvar server/.auth-secret:", error.message);
   }
   return novo;
 }
 const AUTH_SECRET = obterSegredoAuth();
-const TOKEN_DURATION_MS = 8 * 60 * 60 * 1000;
+
+// ==========================================
+// AUTENTICAÇÃO E PERMISSÕES
+// ==========================================
+
+// IP real do usuário. Atrás do Cloudflare Tunnel toda conexão chega de
+// 127.0.0.1; nesse caso o IP original vem no cabeçalho CF-Connecting-IP.
+function ipDoCliente(req) {
+  const origem = req.socket.remoteAddress || "";
+  const conexaoLocal = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(origem);
+  return (conexaoLocal && req.headers["cf-connecting-ip"]) || req.ip || origem || "desconhecido";
+}
+
 const tentativasLogin = new Map();
 
 function limitarLogin(req, res, next) {
-  const chave = req.ip || req.socket.remoteAddress || "desconhecido";
   const agora = Date.now();
+  if (tentativasLogin.size > 5000) {
+    for (const [ip, registro] of tentativasLogin) {
+      if (agora - registro.inicio > JANELA_LOGIN_MS) tentativasLogin.delete(ip);
+    }
+  }
+  const chave = ipDoCliente(req);
   const registro = tentativasLogin.get(chave) || { quantidade: 0, inicio: agora };
-  if (agora - registro.inicio > 15 * 60 * 1000) {
+  if (agora - registro.inicio > JANELA_LOGIN_MS) {
     registro.quantidade = 0;
     registro.inicio = agora;
   }
   registro.quantidade += 1;
   tentativasLogin.set(chave, registro);
-  if (registro.quantidade > 20) return res.status(429).json({ erro: "Muitas tentativas de login. Aguarde alguns minutos." });
+  if (registro.quantidade > MAX_TENTATIVAS_LOGIN) {
+    return res.status(429).json({ erro: "Muitas tentativas de login. Aguarde alguns minutos." });
+  }
   next();
 }
 
+// Token = dados do usuário em base64 + assinatura HMAC-SHA256
 function assinarToken(usuario) {
   const payload = Buffer.from(JSON.stringify({
     id: usuario.id,
     usuario: usuario.usuario,
     nome: usuario.nome,
     nivel: usuario.nivel || "operador",
-    exp: Date.now() + TOKEN_DURATION_MS
+    exp: Date.now() + DURACAO_TOKEN_MS
   })).toString("base64url");
   const assinatura = crypto.createHmac("sha256", AUTH_SECRET).update(payload).digest("base64url");
   return `${payload}.${assinatura}`;
@@ -68,18 +96,26 @@ async function autenticarRequisicao(req, res, next) {
   const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   const [payload, assinatura] = token.split(".");
   if (!payload || !assinatura) return res.status(401).json({ erro: "Autenticação necessária." });
+
   const esperada = crypto.createHmac("sha256", AUTH_SECRET).update(payload).digest("base64url");
-  const assinaturaValida = assinatura.length === esperada.length && crypto.timingSafeEqual(Buffer.from(assinatura), Buffer.from(esperada));
+  const assinaturaValida = assinatura.length === esperada.length
+    && crypto.timingSafeEqual(Buffer.from(assinatura), Buffer.from(esperada));
   if (!assinaturaValida) return res.status(401).json({ erro: "Sessão inválida." });
+
   try {
     const usuario = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (!usuario.exp || usuario.exp < Date.now()) return res.status(401).json({ erro: "Sessão expirada." });
+
+    // Confere no banco a cada requisição: bloqueio e recusa valem na hora
     const usuarioAtual = await db.obterUsuarioSessao(usuario.id);
-    if (!usuarioAtual || usuarioAtual.status !== "aprovado" || usuarioAtual.bloqueado) return res.status(401).json({ erro: "Conta sem acesso ao sistema." });
+    if (!usuarioAtual || usuarioAtual.status !== "aprovado" || usuarioAtual.bloqueado) {
+      return res.status(401).json({ erro: "Conta sem acesso ao sistema." });
+    }
     req.usuario = { ...usuario, ...usuarioAtual };
     await db.registrarAtividadeUsuario(usuarioAtual.id);
     next();
-  } catch {
+  } catch (error) {
+    if (error.bancoIndisponivel) return res.status(503).json({ erro: error.message });
     return res.status(401).json({ erro: "Sessão inválida." });
   }
 }
@@ -93,17 +129,28 @@ function permitirNiveis(...niveis) {
 const somenteAdmin = permitirNiveis("administrador");
 const somenteOperacao = permitirNiveis("administrador", "operador");
 
-// Responde com erro. Se o banco estiver fora do ar, devolve 503 em vez de
-// mascarar como erro de validação.
+function patineteForaDoPonto(req, patinete) {
+  return req.usuario.nivel === "operador" && (!req.usuario.pontoId || patinete?.pontoId !== req.usuario.pontoId);
+}
+
+// ==========================================
+// VALIDAÇÃO E RESPOSTAS
+// ==========================================
+
+// 503 = banco fora do ar; 500 = erro interno; demais = status informado
 function falhar(res, error, status = 400, mensagem = error.message) {
   if (error && error.bancoIndisponivel) return res.status(503).json({ erro: error.message });
-  // Falha inesperada no SQL: não expõe detalhes internos ao navegador
   if (error && error.erroInterno) return res.status(500).json({ erro: error.message });
   return res.status(status).json({ erro: mensagem });
 }
 
-const SENHA_MINIMA = 6;
-const MAX_PATINETES_POR_CADASTRO = 100;
+function validarTexto(valor, campo, maximo = 120) {
+  const texto = String(valor || "").trim();
+  if (!texto) throw new Error(`${campo} é obrigatório.`);
+  if (texto.length > maximo) throw new Error(`${campo} excede o limite de ${maximo} caracteres.`);
+  if (/[<>]/.test(texto)) throw new Error(`${campo} contém caracteres não permitidos.`);
+  return texto;
+}
 
 function validarTelefone(valor) {
   const telefone = String(valor ?? "").trim();
@@ -114,8 +161,7 @@ function validarTelefone(valor) {
   return telefone;
 }
 
-// Campo de CSV seguro: escapa aspas e neutraliza fórmulas (=, +, -, @, tab, CR)
-// para que o Excel/LibreOffice não execute o conteúdo.
+// Campo de CSV: escapa aspas e neutraliza fórmulas (=, +, -, @) para o Excel
 function csv(valor) {
   let texto = String(valor ?? "");
   if (/^[=+\-@\t\r]/.test(texto)) texto = "'" + texto;
@@ -123,76 +169,67 @@ function csv(valor) {
 }
 const numeroCsv = valor => (Number(valor) || 0).toFixed(2);
 
-function validarTexto(valor, campo, maximo = 120) {
-  const texto = String(valor || "").trim();
-  if (!texto) throw new Error(`${campo} é obrigatório.`);
-  if (texto.length > maximo) throw new Error(`${campo} excede o limite de ${maximo} caracteres.`);
-  if (/[<>]/.test(texto)) throw new Error(`${campo} contém caracteres não permitidos.`);
-  return texto;
+function enviarCsv(res, nomeArquivo, conteudo) {
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${nomeArquivo}"`);
+  res.send("﻿" + conteudo);
 }
 
 // ==========================================
-// 1. ROTAS DE AUTENTICAÇÃO E USUÁRIOS
+// 1. AUTENTICAÇÃO E USUÁRIOS
 // ==========================================
 
 app.post("/api/auth/cadastro", async (req, res) => {
   try {
     const { nome, usuario, senha } = req.body || {};
-
     if (!nome || !usuario || !senha || typeof usuario !== "string" || typeof senha !== "string") {
       return res.status(400).json({ erro: "Preencha todos os campos obrigatórios." });
     }
-
     if (usuario.length < 3) {
       return res.status(400).json({ erro: "O nome de usuário deve ter pelo menos 3 caracteres." });
     }
-
     if (senha.length < SENHA_MINIMA || senha.length > 128) {
       return res.status(400).json({ erro: `A senha deve ter entre ${SENHA_MINIMA} e 128 caracteres.` });
     }
+    if (usuario.length > 40 || !/^[a-zA-Z0-9._-]+$/.test(usuario)) {
+      return res.status(400).json({ erro: "O usuário deve conter apenas letras, números, ponto, hífen ou sublinhado." });
+    }
 
-    const nomeValidado = validarTexto(nome, "Nome", 100);
-    if (usuario.length > 40 || !/^[a-zA-Z0-9._-]+$/.test(usuario)) return res.status(400).json({ erro: "O usuário deve conter apenas letras, números, ponto, hífen ou sublinhado." });
-    const novoUsuario = await db.cadastrarUsuario(nomeValidado, usuario.trim(), senha);
-    return res.status(201).json({
+    const novoUsuario = await db.cadastrarUsuario(validarTexto(nome, "Nome", 100), usuario.trim(), senha);
+    res.status(201).json({
       mensagem: "Cadastro realizado com sucesso! Aguarde a aprovação do administrador para acessar o sistema.",
       usuario: novoUsuario
     });
   } catch (error) {
-    return falhar(res, error, 400);
+    falhar(res, error, 400);
   }
 });
 
 app.post("/api/auth/login", limitarLogin, async (req, res) => {
   try {
     const { usuario, senha } = req.body || {};
-
     if (!usuario || !senha || typeof usuario !== "string" || typeof senha !== "string" || senha.length > 128) {
       return res.status(400).json({ erro: "Informe usuário e senha." });
     }
 
-    const authResultado = await db.autenticarUsuario(usuario, senha);
-    if (authResultado.erro) {
-      return res.status(401).json({ erro: authResultado.erro });
-    }
+    const resultado = await db.autenticarUsuario(usuario, senha);
+    if (resultado.erro) return res.status(401).json({ erro: resultado.erro });
 
-    const user = authResultado.usuario;
-    tentativasLogin.delete(req.ip || req.socket.remoteAddress || "desconhecido");
-    return res.json({
+    tentativasLogin.delete(ipDoCliente(req));
+    res.json({
       mensagem: "Login realizado com sucesso!",
-      usuario: user,
-      token: assinarToken(user),
-      expiraEm: new Date(Date.now() + TOKEN_DURATION_MS).toISOString()
+      usuario: resultado.usuario,
+      token: assinarToken(resultado.usuario),
+      expiraEm: new Date(Date.now() + DURACAO_TOKEN_MS).toISOString()
     });
   } catch (error) {
-    return falhar(res, error, 500, "Erro interno no servidor de autenticação.");
+    falhar(res, error, 500, "Erro interno no servidor de autenticação.");
   }
 });
 
 app.get("/api/admin/usuarios", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const usuarios = await db.listarUsuarios();
-    res.json(usuarios);
+    res.json(await db.listarUsuarios());
   } catch (error) {
     falhar(res, error, 500, "Erro ao listar usuários.");
   }
@@ -200,18 +237,12 @@ app.get("/api/admin/usuarios", autenticarRequisicao, somenteAdmin, async (req, r
 
 app.put("/api/admin/usuarios/:id/status", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
     const { status } = req.body;
-
-    if (!status || (status !== "aprovado" && status !== "recusado")) {
+    if (status !== "aprovado" && status !== "recusado") {
       return res.status(400).json({ erro: "Status inválido. Use 'aprovado' ou 'recusado'." });
     }
-
-    const atualizado = await db.alterarStatusUsuario(id, status, req.usuario.usuario);
-    res.json({
-      mensagem: `Status do usuário atualizado para '${status}' com sucesso!`,
-      usuario: atualizado
-    });
+    const usuario = await db.alterarStatusUsuario(req.params.id, status, req.usuario.usuario);
+    res.json({ mensagem: `Status do usuário atualizado para '${status}' com sucesso!`, usuario });
   } catch (error) {
     falhar(res, error, 400);
   }
@@ -266,13 +297,12 @@ app.get("/api/admin/historico-usuarios", autenticarRequisicao, somenteAdmin, asy
 });
 
 // ==========================================
-// 2. ROTAS DE PONTOS DE DISTRIBUIÇÃO
+// 2. PONTOS DE DISTRIBUIÇÃO
 // ==========================================
 
 app.get("/api/pontos", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const pontos = await db.listarPontos();
-    res.json(pontos);
+    res.json(await db.listarPontos());
   } catch (error) {
     falhar(res, error, 500, "Erro ao listar pontos de distribuição.");
   }
@@ -281,15 +311,11 @@ app.get("/api/pontos", autenticarRequisicao, somenteAdmin, async (req, res) => {
 app.post("/api/pontos", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { nome, localizacao } = req.body;
-    if (!nome || !nome.trim()) {
-      return res.status(400).json({ erro: "O nome do ponto é obrigatório." });
-    }
-
-    const novoPonto = await db.adicionarPonto(validarTexto(nome, "Nome", 100), validarTexto(localizacao || "Sem localização", "Localização", 180));
-    res.status(201).json({
-      mensagem: `Ponto '${novoPonto.nome}' cadastrado com sucesso!`,
-      ponto: novoPonto
-    });
+    const ponto = await db.adicionarPonto(
+      validarTexto(nome, "Nome", 100),
+      validarTexto(localizacao || "Sem localização", "Localização", 180)
+    );
+    res.status(201).json({ mensagem: `Ponto '${ponto.nome}' cadastrado com sucesso!`, ponto });
   } catch (error) {
     falhar(res, error, 400);
   }
@@ -297,26 +323,23 @@ app.post("/api/pontos", autenticarRequisicao, somenteAdmin, async (req, res) => 
 
 app.delete("/api/pontos/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    const removido = await db.removerPonto(id);
-    res.json({
-      mensagem: `Ponto '${removido.nome}' removido com sucesso!`,
-      ponto: removido
-    });
+    const ponto = await db.removerPonto(req.params.id);
+    res.json({ mensagem: `Ponto '${ponto.nome}' removido com sucesso!`, ponto });
   } catch (error) {
     falhar(res, error, 400);
   }
 });
 
 // ==========================================
-// 3. ROTAS DE PATINETES (FROTA)
+// 3. PATINETES (FROTA)
 // ==========================================
 
 app.get("/api/patinetes", autenticarRequisicao, async (req, res) => {
   try {
-    const pontoId = req.usuario.nivel === "operador" ? req.usuario.pontoId : null;
-    const patinetes = req.usuario.nivel === "operador" && !pontoId ? [] : await db.listarPatinetes(pontoId);
-    res.json(patinetes);
+    // Operador vê só os patinetes do seu ponto de trabalho
+    const ehOperador = req.usuario.nivel === "operador";
+    if (ehOperador && !req.usuario.pontoId) return res.json([]);
+    res.json(await db.listarPatinetes(ehOperador ? req.usuario.pontoId : null));
   } catch (error) {
     falhar(res, error, 500, "Erro ao listar patinetes.");
   }
@@ -324,8 +347,7 @@ app.get("/api/patinetes", autenticarRequisicao, async (req, res) => {
 
 app.get("/api/patinetes/:id/historico", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const historico = await db.obterHistoricoPatinete(req.params.id);
-    res.json(historico);
+    res.json(await db.obterHistoricoPatinete(req.params.id));
   } catch (error) {
     falhar(res, error, 404);
   }
@@ -338,24 +360,8 @@ app.post("/api/patinetes", autenticarRequisicao, somenteAdmin, async (req, res) 
     if (!Number.isInteger(qtd) || qtd < 1 || qtd > MAX_PATINETES_POR_CADASTRO) {
       return res.status(400).json({ erro: `Informe uma quantidade inteira entre 1 e ${MAX_PATINETES_POR_CADASTRO}.` });
     }
-    const criados = await db.adicionarPatinetes(qtd, pontoId);
-    res.status(201).json({
-      mensagem: `${qtd} patinete(s) adicionado(s) à frota com sucesso!`,
-      patinetes: criados
-    });
-  } catch (error) {
-    falhar(res, error, 400);
-  }
-});
-
-app.delete("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const removido = await db.removerPatinete(id);
-    res.json({
-      mensagem: `Patinete ${removido.codigo} removido da frota com sucesso!`,
-      patinete: removido
-    });
+    const patinetes = await db.adicionarPatinetes(qtd, pontoId);
+    res.status(201).json({ mensagem: `${qtd} patinete(s) adicionado(s) à frota com sucesso!`, patinetes });
   } catch (error) {
     falhar(res, error, 400);
   }
@@ -363,25 +369,29 @@ app.delete("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, async (req,
 
 app.put("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    const atualizado = await db.atualizarPatinete(id, req.body);
-    res.json({
-      mensagem: "Patinete atualizado com sucesso!",
-      patinete: atualizado
-    });
+    const patinete = await db.atualizarPatinete(req.params.id, req.body);
+    res.json({ mensagem: "Patinete atualizado com sucesso!", patinete });
+  } catch (error) {
+    falhar(res, error, 400);
+  }
+});
+
+app.delete("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
+  try {
+    const patinete = await db.removerPatinete(req.params.id);
+    res.json({ mensagem: `Patinete ${patinete.codigo} removido da frota com sucesso!`, patinete });
   } catch (error) {
     falhar(res, error, 400);
   }
 });
 
 // ==========================================
-// 4. ROTAS DE LOCAÇÕES
+// 4. CLIENTES E LOCAÇÕES
 // ==========================================
 
 app.get("/api/clientes", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const clientes = await db.listarClientes();
-    res.json(clientes);
+    res.json(await db.listarClientes());
   } catch (error) {
     falhar(res, error, 500, "Erro ao listar clientes.");
   }
@@ -389,8 +399,7 @@ app.get("/api/clientes", autenticarRequisicao, somenteAdmin, async (req, res) =>
 
 app.get("/api/clientes/:id/historico", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const historico = await db.obterHistoricoCliente(req.params.id);
-    res.json(historico);
+    res.json(await db.obterHistoricoCliente(req.params.id));
   } catch (error) {
     falhar(res, error, 404);
   }
@@ -398,8 +407,7 @@ app.get("/api/clientes/:id/historico", autenticarRequisicao, somenteAdmin, async
 
 app.get("/api/locacoes", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const locacoes = await db.listarLocacoes();
-    res.json(locacoes);
+    res.json(await db.listarLocacoes());
   } catch (error) {
     falhar(res, error, 500, "Erro ao listar locações.");
   }
@@ -407,44 +415,39 @@ app.get("/api/locacoes", autenticarRequisicao, somenteAdmin, async (req, res) =>
 
 app.post("/api/locacoes/iniciar", autenticarRequisicao, somenteOperacao, async (req, res) => {
   try {
-    const { patineteId, patineteIds, cliente, telefone, tempo, valorBase, pagamento } = req.body;
-    const idsSelecionados = Array.isArray(patineteIds) ? patineteIds : [patineteId];
-    const configuracoes = await db.obterConfig();
+    const { patineteId, patineteIds, cliente, telefone, tempo, pagamento } = req.body;
+    const ids = Array.isArray(patineteIds) ? patineteIds : [patineteId];
+    const config = await db.obterConfig();
 
-    if (!idsSelecionados.length || idsSelecionados.some(id => !id) || !cliente || !tempo || !pagamento) {
+    if (!ids.length || ids.some(id => !id) || !cliente || !tempo || !pagamento) {
       return res.status(400).json({ erro: "Campos obrigatórios ausentes para iniciar a locação." });
     }
     if (!FORMAS_PAGAMENTO.includes(pagamento)) {
       return res.status(400).json({ erro: "Forma de pagamento inválida." });
     }
     const telefoneValidado = validarTelefone(telefone);
-    if (idsSelecionados.length > Number(configuracoes.limitePatinetesLocacao || 5)) {
-      return res.status(400).json({ erro: `O limite é de ${configuracoes.limitePatinetesLocacao || 5} patinetes por locação.` });
+    if (ids.length > Number(config.limitePatinetesLocacao || 5)) {
+      return res.status(400).json({ erro: `O limite é de ${config.limitePatinetesLocacao || 5} patinetes por locação.` });
     }
-    if (!configuracoes.temposDisponiveis.map(Number).includes(Number(tempo))) {
+    if (!config.temposDisponiveis.map(Number).includes(Number(tempo))) {
       return res.status(400).json({ erro: "Tempo de locação não permitido nas configurações." });
     }
-    const valorConfigurado = Number(configuracoes.precos[String(tempo)] ?? configuracoes.precos[Number(tempo)]);
-    if (!Number.isFinite(valorConfigurado) || valorConfigurado <= 0) {
+
+    // O preço vem sempre da configuração, nunca do navegador
+    const valorBase = Number(config.precos[String(tempo)]);
+    if (!Number.isFinite(valorBase) || valorBase <= 0) {
       return res.status(400).json({ erro: "Preço não configurado para o tempo selecionado." });
     }
 
-    const patinetesSolicitados = await Promise.all(idsSelecionados.map(id => db.buscarPatinetePorId(id)));
-    if (req.usuario.nivel === "operador" && (!req.usuario.pontoId || patinetesSolicitados.some(p => p?.pontoId !== req.usuario.pontoId))) {
+    const solicitados = await Promise.all(ids.map(id => db.buscarPatinetePorId(id)));
+    if (solicitados.some(patinete => patineteForaDoPonto(req, patinete))) {
       return res.status(403).json({ erro: "Este patinete não pertence ao seu ponto de trabalho." });
     }
 
     const { patinetes, locacoes } = await db.iniciarLocacoes(
-      idsSelecionados,
-      validarTexto(cliente, "Cliente", 100),
-      telefoneValidado,
-      tempo,
-      valorConfigurado,
-      pagamento,
-      req.usuario.usuario
+      ids, validarTexto(cliente, "Cliente", 100), telefoneValidado, tempo, valorBase, pagamento, req.usuario.usuario
     );
-
-    return res.status(201).json({
+    res.status(201).json({
       mensagem: `${patinetes.length} locação(ões) iniciada(s) com sucesso!`,
       locacoes,
       patinetes,
@@ -452,40 +455,31 @@ app.post("/api/locacoes/iniciar", autenticarRequisicao, somenteOperacao, async (
       patinete: patinetes[0]
     });
   } catch (error) {
-    return falhar(res, error, 400);
+    falhar(res, error, 400);
   }
 });
 
 app.post("/api/locacoes/finalizar", autenticarRequisicao, somenteOperacao, async (req, res) => {
   try {
-    // A multa é sempre calculada no servidor; qualquer valor enviado é ignorado.
+    // A multa é calculada no servidor; valores enviados pelo navegador são ignorados
     const { patineteId } = req.body;
-    if (!patineteId) {
-      return res.status(400).json({ erro: "ID do patinete é obrigatório." });
-    }
+    if (!patineteId) return res.status(400).json({ erro: "ID do patinete é obrigatório." });
 
-    const patineteSolicitado = await db.buscarPatinetePorId(patineteId);
-    if (!patineteSolicitado) {
-      return res.status(404).json({ erro: "Patinete não encontrado." });
-    }
-
-    if (req.usuario.nivel === "operador" && (!req.usuario.pontoId || patineteSolicitado.pontoId !== req.usuario.pontoId)) {
+    const solicitado = await db.buscarPatinetePorId(patineteId);
+    if (!solicitado) return res.status(404).json({ erro: "Patinete não encontrado." });
+    if (patineteForaDoPonto(req, solicitado)) {
       return res.status(403).json({ erro: "Este patinete não pertence ao seu ponto de trabalho." });
     }
 
     const { patinete, locacao } = await db.finalizarLocacao(patineteId);
-    res.json({
-      mensagem: `Patinete ${patinete.codigo} devolvido com sucesso!`,
-      patinete,
-      locacao
-    });
+    res.json({ mensagem: `Patinete ${patinete.codigo} devolvido com sucesso!`, patinete, locacao });
   } catch (error) {
     falhar(res, error, 400);
   }
 });
 
 // ==========================================
-// 5. ROTAS DE MANUTENÇÃO
+// 5. MANUTENÇÕES
 // ==========================================
 
 app.get("/api/manutencoes", autenticarRequisicao, somenteAdmin, async (req, res) => {
@@ -498,46 +492,26 @@ app.get("/api/manutencoes", autenticarRequisicao, somenteAdmin, async (req, res)
 
 app.post("/api/manutencoes", autenticarRequisicao, somenteOperacao, async (req, res) => {
   try {
-   const { patineteId, descricao, valor } = req.body;
-
-    // Validação dos campos obrigatórios
+    const { patineteId, descricao, valor } = req.body;
     if (!patineteId || !descricao) {
-      return res.status(400).json({
-        erro: "Patinete e descrição são obrigatórios."
-      });
+      return res.status(400).json({ erro: "Patinete e descrição são obrigatórios." });
     }
-    // Converte o valor recebido para número
     const valorNumerico = Number(valor);
-
-    // Validação do valor da manutenção
-    if (
-      !Number.isFinite(valorNumerico) ||
-      valorNumerico < 0 ||
-      valorNumerico > 100000
-    ) {
-      return res.status(400).json({
-        erro: "Valor da manutenção inválido. Informe um valor entre R$ 0,00 e R$ 100.000,00."
-      });
+    if (!Number.isFinite(valorNumerico) || valorNumerico < 0 || valorNumerico > 100000) {
+      return res.status(400).json({ erro: "Valor da manutenção inválido. Informe um valor entre R$ 0,00 e R$ 100.000,00." });
     }
 
-    const patineteSolicitado = await db.buscarPatinetePorId(patineteId);
-    if (req.usuario.nivel === "operador" && (!req.usuario.pontoId || patineteSolicitado?.pontoId !== req.usuario.pontoId)) {
+    const solicitado = await db.buscarPatinetePorId(patineteId);
+    if (patineteForaDoPonto(req, solicitado)) {
       return res.status(403).json({ erro: "Este patinete não pertence ao seu ponto de trabalho." });
     }
 
-
+    // Só o administrador informa custo; o operador registra apenas o problema
     const valorPermitido = req.usuario.nivel === "administrador" ? valorNumerico : 0;
     const { patinete, manutencao } = await db.registrarManutencao(
-      patineteId,
-      validarTexto(descricao, "Descrição", 300),
-      valorPermitido,
-      req.usuario.usuario
+      patineteId, validarTexto(descricao, "Descrição", 300), valorPermitido, req.usuario.usuario
     );
-    res.status(201).json({
-      mensagem: `Patinete ${patinete.codigo} enviado para manutenção com sucesso!`,
-      patinete,
-      manutencao
-    });
+    res.status(201).json({ mensagem: `Patinete ${patinete.codigo} enviado para manutenção com sucesso!`, patinete, manutencao });
   } catch (error) {
     falhar(res, error, 400);
   }
@@ -545,12 +519,8 @@ app.post("/api/manutencoes", autenticarRequisicao, somenteOperacao, async (req, 
 
 app.post("/api/manutencoes/liberar", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const { patineteId } = req.body;
-    const patinete = await db.liberarManutencao(patineteId);
-    res.json({
-      mensagem: `Patinete ${patinete.codigo} revisado, 100% carregado e liberado para a frota!`,
-      patinete
-    });
+    const patinete = await db.liberarManutencao(req.body.patineteId);
+    res.json({ mensagem: `Patinete ${patinete.codigo} revisado, 100% carregado e liberado para a frota!`, patinete });
   } catch (error) {
     falhar(res, error, 400);
   }
@@ -559,25 +529,20 @@ app.post("/api/manutencoes/liberar", autenticarRequisicao, somenteAdmin, async (
 app.put("/api/admin/manutencoes/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const manutencao = await db.atualizarManutencao(req.params.id, req.body || {});
-    res.json({ mensagem: manutencao.status === "concluida" ? "Manutenção concluída e patinete liberado." : "Manutenção atualizada.", manutencao });
+    const mensagem = manutencao.status === "concluida" ? "Manutenção concluída e patinete liberado." : "Manutenção atualizada.";
+    res.json({ mensagem, manutencao });
   } catch (error) {
     falhar(res, error, 400);
   }
 });
 
-app.get("/api/configuracoes", autenticarRequisicao, async (req, res) => {
-  res.json(await db.obterConfig());
-});
-
 // ==========================================
-// 6. ROTAS DE RELATÓRIOS & EXPORTAÇÃO
+// 6. RELATÓRIOS E EXPORTAÇÃO (CSV)
 // ==========================================
 
 app.get("/api/relatorios/resumo", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const { mes } = req.query;
-    const resumo = await db.obterResumoGeral(mes || null);
-    res.json(resumo);
+    res.json(await db.obterResumoGeral(req.query.mes || null));
   } catch (error) {
     falhar(res, error, 500, "Erro ao consolidar resumo dos relatórios.");
   }
@@ -586,29 +551,28 @@ app.get("/api/relatorios/resumo", autenticarRequisicao, somenteAdmin, async (req
 app.get("/api/relatorios/exportar/faturamento", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const { periodo, mes } = req.query;
-    const mesAtualStr = db.mesLocal(new Date());
-
+    const mesAtual = db.mesLocal(new Date());
     let locacoes = await db.listarLocacoes();
     let nomeArquivo = "faturamento-historico-completo.csv";
 
-    if (mes && mes.match(/^\d{4}-\d{2}$/)) {
+    if (mes && /^\d{4}-\d{2}$/.test(mes)) {
       locacoes = locacoes.filter(l => db.mesLocal(l.dataInicio) === mes);
       nomeArquivo = `faturamento-${mes}.csv`;
     } else if (periodo === "mes_atual") {
-      locacoes = locacoes.filter(l => db.mesLocal(l.dataInicio) === mesAtualStr);
-      nomeArquivo = `faturamento-${mesAtualStr}.csv`;
+      locacoes = locacoes.filter(l => db.mesLocal(l.dataInicio) === mesAtual);
+      nomeArquivo = `faturamento-${mesAtual}.csv`;
     }
 
     let conteudo = "ID;Data;Patinete;Ponto;Cliente;Telefone;Tempo (min);Forma de Pagamento;Valor Base (R$);Multa (R$);Valor Total (R$);Status;Operador\n";
-
-    locacoes.forEach(loc => {
-      const dataFormatada = loc.dataInicio ? new Date(loc.dataInicio).toLocaleString("pt-BR") : "";
-      conteudo += [loc.id, csv(dataFormatada), csv(loc.patineteCodigo), csv(loc.pontoNome || "Geral"), csv(loc.cliente), csv(loc.telefone), Number(loc.tempoMinutos) || 0, csv(loc.pagamento), numeroCsv(loc.valorBase), numeroCsv(loc.multa), numeroCsv(loc.valorTotal), csv(loc.status), csv(loc.usuarioOperador)].join(";") + "\n";
+    locacoes.forEach(l => {
+      const data = l.dataInicio ? new Date(l.dataInicio).toLocaleString("pt-BR") : "";
+      conteudo += [
+        l.id, csv(data), csv(l.patineteCodigo), csv(l.pontoNome || "Geral"), csv(l.cliente), csv(l.telefone),
+        Number(l.tempoMinutos) || 0, csv(l.pagamento), numeroCsv(l.valorBase), numeroCsv(l.multa),
+        numeroCsv(l.valorTotal), csv(l.status), csv(l.usuarioOperador)
+      ].join(";") + "\n";
     });
-
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${nomeArquivo}"`);
-    res.send("\uFEFF" + conteudo);
+    enviarCsv(res, nomeArquivo, conteudo);
   } catch (error) {
     falhar(res, error, 500, "Erro ao exportar planilha de faturamento.");
   }
@@ -618,14 +582,13 @@ app.get("/api/relatorios/exportar/frota", autenticarRequisicao, somenteAdmin, as
   try {
     const resumo = await db.obterResumoGeral("todos");
     let conteudo = "ID;Código;Modelo;Ponto de Distribuição;Bateria (%);Status Atual;Total de Locações;Faturamento Gerado (R$);Gasto com Manutenção (R$);Lucro Líquido (R$)\n";
-
     resumo.usoPorPatinete.forEach(p => {
-      conteudo += [p.id, csv(p.codigo), csv(p.modelo), csv(p.pontoNome), Number(p.bateria) || 0, csv(p.status), p.totalLocacoes, numeroCsv(p.faturamentoGerado), numeroCsv(p.gastoManutencao), numeroCsv(p.lucroLiquido)].join(";") + "\n";
+      conteudo += [
+        p.id, csv(p.codigo), csv(p.modelo), csv(p.pontoNome), Number(p.bateria) || 0, csv(p.status),
+        p.totalLocacoes, numeroCsv(p.faturamentoGerado), numeroCsv(p.gastoManutencao), numeroCsv(p.lucroLiquido)
+      ].join(";") + "\n";
     });
-
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", "attachment; filename=relatorio-frota.csv");
-    res.send("\uFEFF" + conteudo);
+    enviarCsv(res, "relatorio-frota.csv", conteudo);
   } catch (error) {
     falhar(res, error, 500, "Erro ao exportar planilha da frota.");
   }
@@ -635,37 +598,30 @@ app.get("/api/relatorios/exportar/pontos", autenticarRequisicao, somenteAdmin, a
   try {
     const pontos = await db.listarPontos();
     let conteudo = "ID;Nome do Ponto;Localização / Endereço;Total Patinetes;Patinetes Livres;Patinetes Alugados;Em Manutenção;Data de Cadastro\n";
-
     pontos.forEach(p => {
-      const dataFormatada = p.criadoEm ? new Date(p.criadoEm).toLocaleDateString("pt-BR") : "";
-      conteudo += [p.id, csv(p.nome), csv(p.localizacao), p.total, p.livres, p.alugados, p.manutencao, csv(dataFormatada)].join(";") + "\n";
+      const data = p.criadoEm ? new Date(p.criadoEm).toLocaleDateString("pt-BR") : "";
+      conteudo += [
+        p.id, csv(p.nome), csv(p.localizacao), p.total, p.livres, p.alugados, p.manutencao, csv(data)
+      ].join(";") + "\n";
     });
-
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", "attachment; filename=pontos-distribuicao.csv");
-    res.send("\uFEFF" + conteudo);
+    enviarCsv(res, "pontos-distribuicao.csv", conteudo);
   } catch (error) {
     falhar(res, error, 500, "Erro ao exportar planilha de pontos.");
   }
 });
 
 // ==========================================
-// 7. ROTAS DE ADMINISTRAÇÃO E PAINEL
+// 7. PAINEL ADMINISTRATIVO E CONFIGURAÇÕES
 // ==========================================
 
 app.get("/api/admin/stats", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    const { mes } = req.query;
-    const resumo = await db.obterResumoGeral(mes || null);
+    const resumo = await db.obterResumoGeral(req.query.mes || null);
     const config = await db.obterConfig();
-
     res.json({
       periodo: resumo.periodo,
       mesAtual: resumo.mesAtual,
-      perfil: {
-        nome: config.nomeAdmin,
-        cargo: config.cargoAdmin
-      },
+      perfil: { nome: config.nomeAdmin, cargo: config.cargoAdmin },
       stats: {
         totalPatinetes: resumo.frota.total,
         totalLocacoes: resumo.financeiro.totalLocacoes,
@@ -690,18 +646,28 @@ app.get("/api/admin/central", autenticarRequisicao, somenteAdmin, async (req, re
   }
 });
 
+app.get("/api/configuracoes", autenticarRequisicao, async (req, res) => {
+  try {
+    res.json(await db.obterConfig());
+  } catch (error) {
+    falhar(res, error, 500, "Erro ao carregar configurações.");
+  }
+});
+
 app.put("/api/admin/configuracoes", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const tempos = Array.isArray(req.body.temposDisponiveis)
-      ? [...new Set(req.body.temposDisponiveis.map(Number).filter(valor => Number.isInteger(valor) && valor > 0 && valor <= 1440))].sort((a, b) => a - b)
+      ? [...new Set(req.body.temposDisponiveis.map(Number).filter(t => Number.isInteger(t) && t > 0 && t <= 1440))].sort((a, b) => a - b)
       : [];
     if (!tempos.length) return res.status(400).json({ erro: "Informe ao menos um tempo de locação válido." });
+
     const precos = {};
     tempos.forEach(tempo => {
       const preco = Number(req.body.precos?.[tempo]);
       if (!Number.isFinite(preco) || preco <= 0) throw new Error(`Preço inválido para ${tempo} minutos.`);
       precos[tempo] = preco;
     });
+
     const configuracoes = await db.salvarConfig({
       nomeEmpresa: validarTexto(req.body.nomeEmpresa, "Nome da empresa", 100),
       temposDisponiveis: tempos,
@@ -715,25 +681,25 @@ app.put("/api/admin/configuracoes", autenticarRequisicao, somenteAdmin, async (r
   }
 });
 
-// Rota raiz
+// ==========================================
+// INICIALIZAÇÃO
+// ==========================================
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(pastaPublica, "login.html"));
 });
 
-// Inicia Servidor
 const servidor = app.listen(PORT, () => {
   console.log("==========================================");
   console.log("Back-end E-Scooter GO Rodando");
   console.log(`URL: http://localhost:${PORT}`);
   console.log("==========================================");
-  // Aplica o esquema/migração já na subida. Se o banco estiver fora do ar, o
-  // servidor continua no ar (respondendo 503) e tenta de novo na próxima requisição.
+  // Se o banco estiver fora do ar, o servidor continua no ar e tenta de novo depois
   conexao.garantirInicializado()
     .then(() => console.log("[banco] PostgreSQL conectado e esquema verificado."))
     .catch(error => console.error("[banco] Não foi possível inicializar o banco agora:", error.message));
 });
 
-// Encerramento limpo: termina as requisições em andamento e fecha o pool
 function encerrar(sinal) {
   console.log(`${sinal} recebido, encerrando...`);
   servidor.close(() => conexao.encerrar().finally(() => process.exit(0)));
