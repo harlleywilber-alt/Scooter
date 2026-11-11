@@ -1,3 +1,4 @@
+// E-Scooter GO - Bloqueia páginas sem login ou sem permissão (roda antes da página aparecer)
 (function protegerPagina() {
   const exigencia = document.documentElement.dataset.access;
   if (!exigencia) return;
