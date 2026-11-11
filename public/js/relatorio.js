@@ -121,7 +121,7 @@ async function carregarRelatoriosDoServidor() {
     const listaNormalizada = [];
 
     locacoes.forEach(loc => {
-      const mesLoc = (loc.dataInicio || "").slice(0, 7);
+      const mesLoc = mesLocalISO(loc.dataInicio);
       if (mesAlvo && mesLoc !== mesAlvo) return; // ignora meses anteriores na exibição do mês
 
       listaNormalizada.push({
@@ -138,7 +138,7 @@ async function carregarRelatoriosDoServidor() {
     });
 
     manutencoes.forEach(m => {
-      const mesMan = (m.data || "").slice(0, 7);
+      const mesMan = mesLocalISO(m.data);
       if (mesAlvo && mesMan !== mesAlvo) return;
 
       listaNormalizada.push({
@@ -258,7 +258,7 @@ function renderizarGraficos() {
   let labels = Object.keys(porDia).sort();
 
   if (labels.length === 0) {
-    labels = [new Date().toISOString().slice(0, 10)];
+    labels = [diaLocalISO(new Date())];
     porDia[labels[0]] = { faturamento: 0, manutencao: 0, locacoes: 0 };
   }
 
@@ -471,7 +471,7 @@ function aplicarFiltros() {
     if (tipo !== "todos" && item.tipo !== tipo) return false;
 
     if (dataFiltro) {
-      const dataItem = (item.data || "").slice(0, 10);
+      const dataItem = diaLocalISO(item.data);
       if (dataItem !== dataFiltro) return false;
     }
 
@@ -528,9 +528,9 @@ function renderizarTabela(dados) {
     tr.innerHTML = `
       <td>${dataFormatada}</td>
       <td><span class="status-tag ${tagClasse}">${tagTexto}</span></td>
-      <td><strong>${item.patinete}</strong></td>
-      <td>${item.cliente} <small style="color:var(--muted); display:block;">Operador: ${item.usuario}</small></td>
-      <td>${item.descricao}</td>
+      <td><strong>${escaparRelatorio(item.patinete)}</strong></td>
+      <td>${escaparRelatorio(item.cliente)} <small style="color:var(--muted); display:block;">Operador: ${escaparRelatorio(item.usuario)}</small></td>
+      <td>${escaparRelatorio(item.descricao)}</td>
       <td style="color:${valorCor}; font-weight:bold;">R$ ${parseFloat(item.valor || 0).toFixed(2)}</td>
     `;
 
@@ -586,8 +586,8 @@ async function exportarResumoCsv(mes) {
 async function exportarExcel(mes) {
   const [locacoes, manutencoes] = await Promise.all([api.getLocacoes(), api.getManutencoes()]);
   const registros = [
-    ...locacoes.filter(item => (item.dataInicio || "").slice(0, 7) === mes).map(item => ({ data: item.dataInicio, tipo: "Locação", patinete: item.patineteCodigo, cliente: item.cliente, usuario: item.usuarioOperador, valor: item.valorTotal })),
-    ...manutencoes.filter(item => (item.data || "").slice(0, 7) === mes).map(item => ({ data: item.data, tipo: "Manutenção", patinete: item.patineteCodigo, cliente: "Oficina", usuario: item.usuario, valor: item.valor }))
+    ...locacoes.filter(item => mesLocalISO(item.dataInicio) === mes).map(item => ({ data: item.dataInicio, tipo: "Locação", patinete: item.patineteCodigo, cliente: item.cliente, usuario: item.usuarioOperador, valor: item.valorTotal })),
+    ...manutencoes.filter(item => mesLocalISO(item.data) === mes).map(item => ({ data: item.data, tipo: "Manutenção", patinete: item.patineteCodigo, cliente: "Oficina", usuario: item.usuario, valor: item.valor }))
   ];
   const linhas = registros.map(item => `<tr><td>${escaparRelatorio(item.data)}</td><td>${escaparRelatorio(item.tipo)}</td><td>${escaparRelatorio(item.patinete)}</td><td>${escaparRelatorio(item.cliente)}</td><td>${escaparRelatorio(item.usuario)}</td><td>${Number(item.valor || 0).toFixed(2)}</td></tr>`).join("");
   const html = `<html><meta charset="UTF-8"><body><table><thead><tr><th>Data</th><th>Tipo</th><th>Patinete</th><th>Cliente</th><th>Operador</th><th>Valor</th></tr></thead><tbody>${linhas}</tbody></table></body></html>`;
