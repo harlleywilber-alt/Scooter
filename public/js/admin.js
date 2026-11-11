@@ -1,4 +1,4 @@
-// Painel administrativo
+// E-Scooter GO - Painel administrativo
 
 function mostrarToastAdmin(msg) {
   const toast = document.getElementById("toastAdmin");
@@ -16,20 +16,20 @@ function mostrarToastAdmin(msg) {
   }, 2500);
 }
 
-// Carregar estatísticas e perfil do servidor
+// ==========================================
+// VISÃO GERAL
+// ==========================================
 async function carregarDadosAdmin({ automatico = false } = {}) {
   try {
     const dados = await api.getAdminStats();
     const { perfil, stats } = dados;
 
-    // Atualiza o cabeçalho do painel
     const adminNome = document.getElementById("adminNome");
     const adminCargo = document.getElementById("adminCargo");
 
     if (adminNome) adminNome.innerText = perfil.nome || "Administrador";
     if (adminCargo) adminCargo.innerText = perfil.cargo || "Gestor do Sistema";
 
-    // Atualiza cards de métricas (valores do mês vigente)
     const statPatinetes = document.getElementById("statPatinetes");
     const statLocacoes = document.getElementById("statLocacoes");
     const statFaturamento = document.getElementById("statFaturamento");
@@ -100,8 +100,11 @@ function formatarDataHora(data) {
   return Number.isNaN(valor.getTime()) ? "Não informado" : valor.toLocaleString("pt-BR");
 }
 
-// Usado pela atualização automática: evita redesenhar a lista sem mudanças
-// e avisa quando chega um cadastro novo aguardando aprovação.
+// ==========================================
+// USUÁRIOS
+// ==========================================
+
+// Avisa quando chega um cadastro aguardando aprovação
 let assinaturaUsuarios = null;
 let pendentesConhecidos = null;
 
@@ -447,7 +450,9 @@ function logoutAdmin() {
   api.logout();
 }
 
+// ==========================================
 // INICIALIZAÇÃO
+// ==========================================
 selecionarSecaoAdmin(sessionStorage.getItem("secaoAdminAtiva") || "visao", false);
 document.getElementById("configTempos")?.addEventListener("change", renderizarCamposPrecos);
 carregarDadosAdmin();
@@ -457,13 +462,7 @@ carregarManutencoesAdmin();
 carregarCentralAdmin();
 carregarConfiguracoesSistema();
 
-// ATUALIZAÇÃO AUTOMÁTICA (a cada 15 s)
-// Novos cadastros, manutenções, histórico, alertas, operadores online e os
-// números da visão geral aparecem sem recarregar a página. Cada parte só é
-// redesenhada se mudou. Não atualiza com a aba escondida, com uma janela
-// (modal) aberta ou enquanto o admin usa um campo da lista (ex.: escolhendo o
-// ponto de um operador). As configurações ficam de fora para não apagar o que
-// o admin estiver digitando.
+// Atualização automática a cada 15 s (configurações ficam de fora para não apagar o que está sendo digitado)
 function adminEstaInteragindo() {
   const modal = document.getElementById("modalAdmin");
   if (modal && modal.style.display === "flex") return true;
