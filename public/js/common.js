@@ -38,6 +38,37 @@ function mesLocalISO(valor) {
   return diaLocalISO(valor).slice(0, 7);
 }
 
+// Atualização automática das telas, compartilhada por todas as páginas.
+// - roda "atualizar" a cada intervaloMs;
+// - pausa com a aba escondida e atualiza na hora ao voltar para ela;
+// - pula a rodada se "podeAtualizar" devolver false (ex.: janela aberta);
+// - nunca roda duas vezes ao mesmo tempo.
+function iniciarAtualizacaoAutomatica(atualizar, { intervaloMs = 15000, podeAtualizar = () => true } = {}) {
+  let emAndamento = false;
+  const executar = async () => {
+    if (document.hidden || emAndamento || !podeAtualizar()) return;
+    emAndamento = true;
+    try {
+      await atualizar();
+    } catch (error) {
+      console.warn("Falha na atualização automática:", error);
+    } finally {
+      emAndamento = false;
+    }
+  };
+  const temporizador = setInterval(executar, intervaloMs);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) executar();
+  });
+  return { executar, parar: () => clearInterval(temporizador) };
+}
+
+// true quando o foco está num campo de formulário dentro de um dos seletores
+function campoEmUsoDentroDe(seletores) {
+  const ativo = document.activeElement;
+  return Boolean(ativo && ["SELECT", "INPUT", "TEXTAREA"].includes(ativo.tagName) && ativo.closest(seletores));
+}
+
 function usuarioEhAdministrador() {
   try {
     const usuario = JSON.parse(localStorage.getItem("usuarioLogado") || "null");
