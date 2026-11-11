@@ -16,13 +16,20 @@ function mostrarToast(msg) {
 }
 
 // Carregar pontos da API
-async function carregarPontos() {
+// automatico = true: atualização periódica (só redesenha se mudou, sem aviso de erro)
+let assinaturaPontos = null;
+
+async function carregarPontos({ automatico = false } = {}) {
   try {
-    pontos = await api.getPontos();
+    const lista = await api.getPontos();
+    const assinatura = JSON.stringify(lista);
+    if (automatico && assinatura === assinaturaPontos) return;
+    assinaturaPontos = assinatura;
+    pontos = lista;
     renderizarPontos();
   } catch (error) {
     console.error("Erro ao carregar pontos:", error);
-    mostrarToast("Erro ao carregar pontos do servidor");
+    if (!automatico) mostrarToast("Erro ao carregar pontos do servidor");
   }
 }
 
@@ -135,4 +142,6 @@ async function confirmarExcluirPonto(id, nome) {
 
 // INICIALIZAÇÃO E SINCRONIZAÇÃO PERIÓDICA
 carregarPontos();
-setInterval(carregarPontos, 3000);
+// Antes: a cada 3 s, mesmo com a aba escondida, redesenhando sempre.
+// Agora: a cada 15 s, pausa com a aba escondida e só redesenha se algo mudou.
+iniciarAtualizacaoAutomatica(() => carregarPontos({ automatico: true }), { intervaloMs: 15000 });
