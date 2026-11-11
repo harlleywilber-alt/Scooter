@@ -1,13 +1,13 @@
-// Conexão com o PostgreSQL: pool, conversão de tipos, transações e tradução
-// dos erros do banco para mensagens que a API pode devolver ao usuário.
+// E-Scooter GO - Conexão com o PostgreSQL: pool, transações e tradução de erros
 const { Pool, types } = require("pg");
 
-// --- Conversão de tipos ----------------------------------------------------
-// NUMERIC (dinheiro) e BIGINT (COUNT/SUM) chegam como texto por padrão no
-// driver "pg"; a API sempre trabalhou com números.
+// ==========================================
+// CONVERSÃO DE TIPOS E POOL
+// ==========================================
+
+// NUMERIC e BIGINT viram número; TIMESTAMPTZ vira texto ISO 8601
 types.setTypeParser(types.builtins.NUMERIC, valor => parseFloat(valor));
 types.setTypeParser(types.builtins.INT8, valor => parseInt(valor, 10));
-// TIMESTAMPTZ vira string ISO 8601 (mesmo formato que a API já devolvia).
 const lerTimestampTz = types.getTypeParser(types.builtins.TIMESTAMPTZ);
 types.setTypeParser(types.builtins.TIMESTAMPTZ, valor => lerTimestampTz(valor).toISOString());
 
@@ -20,10 +20,13 @@ const pool = new Pool({
   max: Number(process.env.PGPOOL_MAX) || 10,
   connectionTimeoutMillis: 5000
 });
-// Uma conexão ociosa que cai (ex.: banco reiniciado) não pode derrubar o Node.
 pool.on("error", error => console.error("Conexão ociosa com o PostgreSQL falhou:", error.message));
 
-// --- Erros -----------------------------------------------------------------
+// ==========================================
+// ERROS
+// ==========================================
+
+// Banco fora do ar: a API responde 503
 class BancoIndisponivelError extends Error {
   constructor(causa) {
     super("Banco de dados indisponível. Tente novamente em instantes.");
@@ -33,8 +36,7 @@ class BancoIndisponivelError extends Error {
   }
 }
 
-// Erro inesperado do banco (bug de SQL etc.): a rota responde 500 sem expor
-// detalhes internos ao navegador.
+// Falha inesperada: a API responde 500 sem expor detalhes ao navegador
 class ErroInternoBanco extends Error {
   constructor(causa) {
     super("Erro interno ao acessar o banco de dados.");
@@ -44,14 +46,21 @@ class ErroInternoBanco extends Error {
   }
 }
 
+// Regra de negócio violada: a API responde 400 com a mensagem
+function erroDeValidacao(mensagem) {
+  const erro = new Error(mensagem);
+  erro.erroDeValidacao = true;
+  return erro;
+}
+
 const CODIGOS_DE_CONEXAO = new Set(["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "EHOSTUNREACH", "EPIPE"]);
-// Mensagens amigáveis para restrições conhecidas do esquema
 const MENSAGENS_RESTRICAO = {
   usuarios_login_unico: "Nome de usuário já cadastrado!",
   locacoes_uma_ativa_por_patinete: "Este patinete já possui uma locação ativa.",
   patinetes_codigo_key: "Já existe um patinete com este código."
 };
 
+// Converte erros do PostgreSQL/driver em um dos três tipos acima
 function traduzirErro(error) {
   if (!error || error.bancoIndisponivel || error.erroInterno || error.erroDeValidacao) return error;
   const codigo = String(error.code || "");
@@ -61,8 +70,6 @@ function traduzirErro(error) {
       || codigo.startsWith("08") || ["57P01", "57P02", "57P03", "53300", "3D000", "28P01", "28000"].includes(codigo)) {
     return new BancoIndisponivelError(error);
   }
-  // Regras de negócio usam erroDeValidacao(); qualquer outro erro do Node aqui é
-  // bug (TypeError etc.): vira 500 genérico e o detalhe fica só no log.
   if (!ehErroDoPostgres) return new ErroInternoBanco(error);
 
   if (MENSAGENS_RESTRICAO[error.constraint]) return erroDeValidacao(MENSAGENS_RESTRICAO[error.constraint]);
@@ -76,15 +83,17 @@ function traduzirErro(error) {
   return new ErroInternoBanco(error);
 }
 
-function erroDeValidacao(mensagem) {
-  const erro = new Error(mensagem);
-  erro.erroDeValidacao = true;
-  return erro;
+function registrar(error) {
+  if (error.bancoIndisponivel) console.error(`[banco] ${error.message}`, error.cause?.message || "");
+  if (error.erroInterno) console.error(`[banco] ${error.message}`, error.cause?.stack || error.cause?.message || "");
+  return error;
 }
 
-// --- Inicialização preguiçosa -----------------------------------------------
-// O esquema/seed/migração rodam na primeira consulta. Se o banco estiver fora
-// do ar, a próxima requisição tenta de novo (o servidor sobe mesmo assim).
+// ==========================================
+// INICIALIZAÇÃO DO BANCO
+// ==========================================
+
+// Roda uma vez (esquema, dados iniciais, migração); se falhar, tenta de novo na próxima consulta
 let inicializador = null;
 let promessaInicializacao = null;
 function definirInicializador(fn) {
@@ -108,7 +117,10 @@ function garantirInicializado() {
   return promessaInicializacao;
 }
 
-// --- API de acesso -----------------------------------------------------------
+// ==========================================
+// CONSULTAS E TRANSAÇÕES
+// ==========================================
+
 async function consultar(sql, parametros = []) {
   try {
     await garantirInicializado();
@@ -118,7 +130,7 @@ async function consultar(sql, parametros = []) {
   }
 }
 
-// Executa fn(cliente) dentro de BEGIN/COMMIT; qualquer erro faz ROLLBACK.
+// Executa fn(conexao) entre BEGIN e COMMIT; qualquer erro faz ROLLBACK
 async function transacao(fn, { somenteLeitura = false } = {}) {
   let conexao;
   try {
@@ -138,12 +150,6 @@ async function transacao(fn, { somenteLeitura = false } = {}) {
   } finally {
     conexao.release();
   }
-}
-
-function registrar(error) {
-  if (error.bancoIndisponivel) console.error(`[banco] ${error.message}`, error.cause?.message || "");
-  if (error.erroInterno) console.error(`[banco] ${error.message}`, error.cause?.stack || error.cause?.message || "");
-  return error;
 }
 
 async function encerrar() {
