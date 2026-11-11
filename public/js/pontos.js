@@ -49,13 +49,13 @@ function renderizarPontos() {
     card.innerHTML = `
       <div class="card-ponto-header">
         <div class="card-ponto-info">
-          <h3>${ponto.nome}</h3>
+          <h3>${escaparHtml(ponto.nome)}</h3>
           <div class="card-ponto-local">
             <i class="fa-solid fa-location-dot" style="color: #60a5fa;"></i>
-            <span>${ponto.localizacao || "Sem localização"}</span>
+            <span>${escaparHtml(ponto.localizacao || "Sem localização")}</span>
           </div>
         </div>
-        <button class="btn-deletar-ponto" onclick="confirmarExcluirPonto(${ponto.id}, '${ponto.nome}')" title="Excluir Ponto">
+        <button class="btn-deletar-ponto" data-id="${ponto.id}" title="Excluir Ponto">
           <i class="fa-solid fa-trash-can"></i>
         </button>
       </div>
@@ -78,6 +78,8 @@ function renderizarPontos() {
       </div>
     `;
 
+    // Listener em vez de onclick inline: nomes com apóstrofo ou aspas quebravam o JS.
+    card.querySelector(".btn-deletar-ponto").addEventListener("click", () => confirmarExcluirPonto(ponto.id, ponto.nome));
     lista.appendChild(card);
   });
 }
