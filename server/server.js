@@ -14,12 +14,6 @@ const pastaPublica = path.resolve(__dirname, "..", "public");
 // Middlewares
 app.use(cors());
 app.use(express.json());
-app.use((req, res, next) => {
-  if (req.path.startsWith("/data/")) {
-    return res.status(404).end();
-  }
-  next();
-});
 app.use(express.static(pastaPublica));
 
 // Segredo dos tokens: variável AUTH_SECRET ou um arquivo local gerado uma vez

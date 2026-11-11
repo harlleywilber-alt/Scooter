@@ -95,9 +95,6 @@ Scooter/
 │   ├── images/
 │   └── *.html
 │
-├── data/
-│   └── database.example.json
-│
 └── README.md
 ```
 
