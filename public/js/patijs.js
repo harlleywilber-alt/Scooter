@@ -43,13 +43,18 @@ window.onclick = function (e) {
 };
 
 // Carregar dados reais do servidor / banco de dados
-async function carregarDadosDoServidor() {
+// automatico = true: sincronização periódica (sem aviso de erro a cada rodada)
+async function carregarDadosDoServidor({ automatico = false } = {}) {
   try {
     const [patinetes, pontos, configuracoes] = await Promise.all([
       api.getPatinetes(),
       usuarioEhAdministrador() ? api.getPontos() : Promise.resolve([]),
       api.getConfiguracoes()
     ]);
+
+    // Se uma janela foi aberta enquanto os dados chegavam, não troca a lista
+    // por baixo dela; a próxima rodada atualiza.
+    if (automatico && janelaAberta()) return;
 
     bikes = patinetes.map(p => ({
       ...p,
@@ -64,8 +69,33 @@ async function carregarDadosDoServidor() {
     render();
   } catch (error) {
     console.error("Erro ao carregar dados:", error);
-    mostrarToast("Erro ao conectar ao servidor de dados");
+    if (!automatico) mostrarToast("Erro ao conectar ao servidor de dados");
   }
+}
+
+function janelaAberta() {
+  const modal = document.getElementById("modal");
+  return Boolean(modal && modal.style.display === "flex");
+}
+
+// Aviso quando uma locação estoura o tempo (uma vez por locação)
+const atrasosAvisados = new Set();
+let primeiraVerificacaoAtraso = true;
+function verificarAtrasos() {
+  const atrasados = bikes.filter(b =>
+    (b.status === STATUS.LOCADO || b.status === STATUS.ATRASADO) && b.inicio && calcularTempoRestante(b) <= 0);
+  const novos = atrasados.filter(b => !atrasosAvisados.has(`${b.id}-${b.inicio}`));
+  novos.forEach(b => atrasosAvisados.add(`${b.id}-${b.inicio}`));
+  if (!novos.length) return;
+
+  if (novos.length === 1) {
+    const b = novos[0];
+    mostrarToast(`⚠️ ${b.codigo || `Patinete ${b.id}`} (cliente ${b.cliente || "não informado"}) está com a locação atrasada`);
+  } else {
+    const codigos = novos.map(b => b.codigo || `Patinete ${b.id}`).join(", ");
+    mostrarToast(`⚠️ ${novos.length} locações ${primeiraVerificacaoAtraso ? "estão" : "ficaram"} atrasadas: ${codigos}`);
+  }
+  primeiraVerificacaoAtraso = false;
 }
 
 // ADICIONAR PATINETES
@@ -662,7 +692,16 @@ function render() {
 // INICIALIZAÇÃO E LOOP DE TEMPO REAL
 carregarDadosDoServidor();
 
-// Atualiza contadores e timers a cada 1 segundo
+// Atualiza contadores e timers a cada 1 segundo (cálculo local, sem ir ao servidor)
 setInterval(() => {
   render();
+  verificarAtrasos();
 }, 1000);
+
+// Sincroniza com o servidor a cada 10 segundos: locações, devoluções e
+// manutenções feitas por outros operadores aparecem sem recarregar a página.
+// Pausa com uma janela aberta (locação, devolução...) ou com a aba escondida.
+iniciarAtualizacaoAutomatica(() => carregarDadosDoServidor({ automatico: true }), {
+  intervaloMs: 10000,
+  podeAtualizar: () => !janelaAberta() && !bloqueado
+});
