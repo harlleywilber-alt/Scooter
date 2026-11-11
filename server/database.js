@@ -1,19 +1,14 @@
-// Camada de dados do E-Scooter GO sobre o esquema relacional (database.sql).
-//
-// Cada função faz apenas as consultas de que precisa, sempre parametrizadas
-// ($1, $2...). Operações que mudam mais de uma tabela ou dependem do estado
-// atual (alugar, devolver, manutenção...) rodam em transação e travam só as
-// linhas envolvidas com SELECT ... FOR UPDATE.
-//
-// Os nomes das funções e o formato dos objetos devolvidos são os mesmos da
-// versão anterior, então server.js e o front-end não precisam mudar.
+// E-Scooter GO - Regras de negócio e consultas SQL
+// Operações que dependem do estado atual rodam em transação com SELECT ... FOR UPDATE
 const crypto = require("crypto");
 const { consultar, transacao, definirInicializador, erroDeValidacao, BancoIndisponivelError } = require("./conexao");
 const { inicializarBanco, hashSenha, ITERACOES_SENHA } = require("./inicializacao");
 
 definirInicializador(inicializarBanco);
 
-// --- Utilitários -------------------------------------------------------------
+// ==========================================
+// UTILITÁRIOS
+// ==========================================
 async function gerarSalt() {
   return crypto.randomBytes(16).toString("hex");
 }
@@ -23,17 +18,15 @@ async function verificarSenha(senhaDigitada, hashArmazenado, salt, iteracoes = I
   return hashTeste.length === hashArmazenado.length && crypto.timingSafeEqual(Buffer.from(hashTeste), Buffer.from(hashArmazenado));
 }
 
-// IDs vindos da URL/corpo: inteiro positivo ou null (null nunca encontra registro)
+// ID inválido vira null (nunca encontra registro)
 function idOuNulo(valor) {
   const n = Number(valor);
   return Number.isInteger(n) && n > 0 && n <= 2147483647 ? n : null;
 }
 
-// Erro de regra de negócio: a rota responde 400 com esta mensagem
 const falha = mensagem => erroDeValidacao(mensagem);
 
-// Datas: gravadas como instante (TIMESTAMPTZ); meses/dias dos relatórios no
-// fuso da operação. Ex.: 22h do dia 31 em Brasília é 01h UTC do dia 1.
+// Dia e mês no fuso da operação (as datas ficam em UTC no banco)
 const FUSO_HORARIO = process.env.APP_TZ || "America/Sao_Paulo";
 const formatadorDia = new Intl.DateTimeFormat("en-CA", { timeZone: FUSO_HORARIO, year: "numeric", month: "2-digit", day: "2-digit" });
 function diaLocal(data) {
@@ -48,8 +41,7 @@ function mesAnteriorDe(mes) {
   return m === 1 ? `${ano - 1}-12` : `${ano}-${String(m - 1).padStart(2, "0")}`;
 }
 
-// Multa: minutos completos de atraso x multa por minuto
-// (mesma regra exibida em patijs.js -> calcularValorAtual).
+// Multa = minutos completos de atraso x multa por minuto
 function calcularMulta(locacao, multaPorMinuto, agoraMs = Date.now()) {
   const inicioMs = new Date(locacao.dataInicio).getTime();
   if (!Number.isFinite(inicioMs)) return 0;
@@ -58,7 +50,9 @@ function calcularMulta(locacao, multaPorMinuto, agoraMs = Date.now()) {
   return Math.round(atrasoMin * Math.max(0, Number(multaPorMinuto) || 0) * 100) / 100;
 }
 
-// --- Consultas reutilizadas (mesmo formato de objeto que a API já devolvia) ---
+// ==========================================
+// CONSULTAS REUTILIZADAS
+// ==========================================
 const SELECT_PATINETE = `
   SELECT p.id, p.codigo, p.modelo, p.bateria, p.status,
          p.ponto_id AS "pontoId", COALESCE(pt.nome, 'Sem ponto') AS "pontoNome",
@@ -111,7 +105,9 @@ async function registrarHistorico(cliente, acao, user, responsavel = "admin", de
     [acao, user.id, user.nome, String(responsavel || "sistema").slice(0, 40), detalhes]);
 }
 
-// --- USUÁRIOS & APROVAÇÃO ----------------------------------------------------
+// ==========================================
+// USUÁRIOS
+// ==========================================
 async function listarUsuarios() {
   const { rows } = await consultar(`SELECT ${COLUNAS_USUARIO} FROM usuarios ORDER BY id`);
   return rows;
@@ -131,7 +127,6 @@ async function obterUsuarioSessao(id) {
 async function cadastrarUsuario(nome, usuario, senha) {
   const salt = await gerarSalt();
   const senhaHash = await hashSenha(senha, salt);
-  // O índice único usuarios_login_unico recusa logins repetidos (sem diferenciar maiúsculas)
   const { rows: [novo] } = await consultar(
     `INSERT INTO usuarios (nome, usuario, senha_hash, salt, iteracoes_senha, cargo, nivel, status)
      VALUES ($1, $2, $3, $4, $5, 'Operador', 'operador', 'pendente')
@@ -150,7 +145,7 @@ async function autenticarUsuario(usuario, senha) {
   const senhaValida = await verificarSenha(senha, user.senhaHash, user.salt, user.iteracoesSenha);
   if (!senhaValida) return { erro: "Usuário ou senha inválidos." };
 
-  // Senhas antigas com menos iterações são atualizadas no primeiro login correto
+  // Atualiza senhas antigas para o número atual de iterações
   if (user.iteracoesSenha < ITERACOES_SENHA) {
     const salt = await gerarSalt();
     await consultar("UPDATE usuarios SET salt = $2, senha_hash = $3, iteracoes_senha = $4 WHERE id = $1",
@@ -175,7 +170,7 @@ async function autenticarUsuario(usuario, senha) {
 }
 
 async function registrarAtividadeUsuario(id) {
-  // No máximo uma gravação por minuto por usuário
+  // Grava no máximo uma vez por minuto
   await consultar(
     `UPDATE usuarios SET ultima_atividade = now()
       WHERE id = $1 AND (ultima_atividade IS NULL OR ultima_atividade < now() - interval '1 minute')`, [idOuNulo(id)]);
@@ -249,7 +244,9 @@ async function listarHistoricoUsuarios() {
   return rows;
 }
 
-// --- PONTOS DE DISTRIBUIÇÃO --------------------------------------------------
+// ==========================================
+// PONTOS DE DISTRIBUIÇÃO
+// ==========================================
 async function listarPontos() {
   const { rows } = await consultar(`
     SELECT pt.id, pt.nome, pt.localizacao,
@@ -278,18 +275,18 @@ async function removerPonto(id) {
     const { rows: [removido] } = await cliente.query(
       `SELECT id, nome, localizacao, criado_em AS "criadoEm" FROM pontos WHERE id = $1 FOR UPDATE`, [idOuNulo(id)]);
     if (!removido) throw falha("Ponto de distribuição não encontrado");
-    // Mesmo comportamento de antes: patinetes vão para o primeiro ponto restante
+    // Patinetes do ponto removido vão para o primeiro ponto restante
     const { rows: [restante] } = await cliente.query("SELECT id FROM pontos WHERE id <> $1 ORDER BY id LIMIT 1", [removido.id]);
     await cliente.query("UPDATE patinetes SET ponto_id = $2 WHERE ponto_id = $1", [removido.id, restante ? restante.id : null]);
-    // usuarios.ponto_id vira NULL automaticamente (ON DELETE SET NULL)
     await cliente.query("DELETE FROM pontos WHERE id = $1", [removido.id]);
     return removido;
   });
 }
 
-// --- PATINETES -----------------------------------------------------------------
+// ==========================================
+// PATINETES
+// ==========================================
 async function listarPatinetes(pontoId = null) {
-  // pontoId inválido (não numérico) filtra por -1, ou seja, nenhum patinete
   const filtro = pontoId ? (idOuNulo(pontoId) ?? -1) : null;
   const { rows } = await consultar(`${SELECT_PATINETE} WHERE ($1::int IS NULL OR p.ponto_id = $1) ORDER BY p.id`, [filtro]);
   return rows;
@@ -309,7 +306,7 @@ async function adicionarPatinetes(qtd, pontoId = null) {
     } else {
       ({ rows: [ponto] } = await cliente.query("SELECT id FROM pontos ORDER BY id LIMIT 1"));
     }
-    // IDs da sequência do banco; código PAT001, PAT002... (sem cortar acima de 999)
+    // Código PAT001, PAT002... a partir do ID gerado pelo banco
     const { rows } = await cliente.query(`
       INSERT INTO patinetes (id, codigo, ponto_id)
       SELECT n, 'PAT' || CASE WHEN n < 1000 THEN lpad(n::text, 3, '0') ELSE n::text END, $2
@@ -327,15 +324,13 @@ async function removerPatinete(id) {
     if (alvo.status === "locado" || ativa) throw falha("Não é possível remover um patinete que está alugado no momento!");
     if (alvo.status === "manutencao") throw falha("Conclua a manutenção antes de remover o patinete.");
     const [removido] = await buscarPatinetes(cliente, [alvo.id]);
-    // Histórico preservado: locações/manutenções guardam o código do patinete
     await cliente.query("DELETE FROM patinetes WHERE id = $1", [alvo.id]);
     return removido;
   });
 }
 
 async function atualizarPatinete(id, dados) {
-  // Somente campos editáveis manualmente. Status, cliente, id etc. só mudam
-  // pelos fluxos próprios (locação, devolução, manutenção).
+  // Status, cliente e id só mudam pelos fluxos de locação e manutenção
   const tem = campo => Object.prototype.hasOwnProperty.call(dados || {}, campo);
   const naoPermitidos = Object.keys(dados || {}).filter(campo => !["pontoId", "pontoNome", "modelo", "bateria"].includes(campo));
   if (naoPermitidos.length) throw falha(`Campo(s) não editável(is): ${naoPermitidos.join(", ")}.`);
@@ -377,7 +372,9 @@ async function atualizarPatinete(id, dados) {
   });
 }
 
-// --- CLIENTES & LOCAÇÕES ---------------------------------------------------------
+// ==========================================
+// CLIENTES E LOCAÇÕES
+// ==========================================
 async function listarLocacoes() {
   const { rows } = await consultar(`${SELECT_LOCACAO} ORDER BY l.id`);
   return rows;
@@ -430,14 +427,14 @@ async function iniciarLocacoes(patineteIds, cliente, telefone, tempo, valorBase,
   if (ids.includes(null)) throw falha("Um dos patinetes selecionados não foi encontrado.");
 
   return transacao(async conexao => {
-    // Trava só estes patinetes até o COMMIT (ordem fixa evita deadlock)
+    // Trava os patinetes até o COMMIT: impede locação dupla
     const { rows: travados } = await conexao.query(
       "SELECT id, codigo, status FROM patinetes WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE", [ids]);
     if (travados.length !== ids.length) throw falha("Um dos patinetes selecionados não foi encontrado.");
     const indisponivel = travados.find(p => p.status !== "livre");
     if (indisponivel) throw falha(`O patinete ${indisponivel.codigo} não está mais disponível.`);
 
-    // Cliente identificado pelos dígitos do telefone (cria ou atualiza o nome)
+    // Cliente identificado pelo telefone (cria ou atualiza o nome)
     const nome = cliente.trim();
     const telefoneLimpo = String(telefone || "").trim();
     const digitos = telefoneLimpo.replace(/\D/g, "") || null;
@@ -483,7 +480,6 @@ async function finalizarLocacao(patineteId) {
          FROM locacoes WHERE patinete_id = $1 AND status = 'ativa' FOR UPDATE`, [patinete.id]);
     if (!ativa || patinete.status !== "locado") throw falha(`O patinete ${patinete.codigo} não possui locação ativa.`);
 
-    // Multa sempre calculada no servidor, com a configuração atual
     const { rows: [config] } = await conexao.query("SELECT multa_por_minuto FROM configuracoes WHERE id = 1");
     const agora = new Date();
     const multa = calcularMulta(ativa, config.multa_por_minuto, agora.getTime());
@@ -500,7 +496,9 @@ async function finalizarLocacao(patineteId) {
   });
 }
 
-// --- MANUTENÇÕES -------------------------------------------------------------------
+// ==========================================
+// MANUTENÇÕES
+// ==========================================
 async function listarManutencoes() {
   const { rows } = await consultar(`${SELECT_MANUTENCAO} ORDER BY m.id`);
   return rows;
@@ -555,8 +553,7 @@ async function atualizarManutencao(id, dados = {}) {
     if (dados.previsaoConclusao !== undefined) {
       const previsao = dados.previsaoConclusao ? String(dados.previsaoConclusao) : null;
       if (previsao && Number.isNaN(Date.parse(previsao))) throw falha("Data de previsão inválida.");
-      // O campo datetime-local do front ("2026-11-12T10:00") não tem fuso:
-      // é interpretado no horário da operação. Datas com fuso/Z são usadas como vieram.
+      // Data sem fuso (campo datetime-local) é tratada como horário da operação
       valores.push(previsao, FUSO_HORARIO);
       const v = `$${valores.length - 1}`;
       const fuso = `$${valores.length}`;
@@ -576,7 +573,7 @@ async function atualizarManutencao(id, dados = {}) {
     if (colunas.length) await conexao.query(`UPDATE manutencoes SET ${colunas.join(", ")} WHERE id = $1`, valores);
 
     if (concluir && atual.patineteId) {
-      // Libera o patinete só se ele estiver em manutenção e não houver outra manutenção aberta
+      // Libera o patinete se não houver outra manutenção aberta
       await conexao.query(`
         UPDATE patinetes p SET status = 'livre', bateria = 100
          WHERE p.id = $1 AND p.status = 'manutencao'
@@ -605,7 +602,9 @@ async function liberarManutencao(patineteId) {
   });
 }
 
-// --- CONFIGURAÇÕES & ADMIN -------------------------------------------------------
+// ==========================================
+// CONFIGURAÇÕES E PAINEL ADMIN
+// ==========================================
 async function lerConfig(executor) {
   const { rows: [config] } = await executor.query(`
     SELECT nome_admin AS "nomeAdmin", cargo_admin AS "cargoAdmin", nome_empresa AS "nomeEmpresa",
@@ -695,7 +694,9 @@ async function obterPainelOperacional() {
   }, { somenteLeitura: true });
 }
 
-// --- CONSOLIDADOR DE RELATÓRIOS ------------------------------------------------
+// ==========================================
+// RELATÓRIOS
+// ==========================================
 async function obterResumoGeral(mesFiltro = null) {
   const mesAtualStr = mesLocal(new Date());
   const mesAlvo = mesFiltro === "todos" ? null : (!mesFiltro || mesFiltro === "atual" ? mesAtualStr : String(mesFiltro));
@@ -705,7 +706,6 @@ async function obterResumoGeral(mesFiltro = null) {
   const filtroMan = "($1::text IS NULL OR to_char(m.data AT TIME ZONE $2, 'YYYY-MM') = $1)";
   const parametros = [mesAlvo, FUSO_HORARIO];
 
-  // REPEATABLE READ: todos os números do relatório vêm do mesmo instante do banco
   return transacao(async c => {
     const lista = async (sql, params = parametros) => (await c.query(sql, params)).rows;
 
