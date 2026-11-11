@@ -1,7 +1,4 @@
-// Inicialização do banco: aplica o esquema (database.sql) e, se o banco ainda
-// não tiver dados, migra o formato antigo (tabela "sistema" com um JSON único)
-// ou cria os dados iniciais. Roda uma vez por processo, dentro de uma
-// transação com lock, então várias instâncias não executam ao mesmo tempo.
+// E-Scooter GO - Inicialização do banco: esquema, dados iniciais e migração do formato antigo
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -46,6 +43,10 @@ const dataOuNulo = valor => {
   const d = new Date(valor);
   return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 };
+
+// ==========================================
+// ESQUEMA
+// ==========================================
 
 async function inicializarBanco(conexao) {
   const esquema = fs.readFileSync(path.join(__dirname, "database.sql"), "utf8");
@@ -108,7 +109,9 @@ async function ajustarSequencias(conexao) {
   }
 }
 
-// --- Banco novo: dados iniciais ---------------------------------------------
+// ==========================================
+// DADOS INICIAIS (BANCO NOVO)
+// ==========================================
 async function criarDadosIniciais(conexao) {
   const senhaInicial = process.env.ADMIN_SENHA_INICIAL || "admin123";
   if (!process.env.ADMIN_SENHA_INICIAL) {
@@ -138,7 +141,11 @@ async function criarDadosIniciais(conexao) {
   console.log("[banco] Banco criado com os dados iniciais.");
 }
 
-// --- Migração do formato antigo (JSON único na tabela "sistema") -------------
+// ==========================================
+// MIGRAÇÃO DO FORMATO ANTIGO
+// ==========================================
+
+// Copia o JSON da tabela "sistema" para as tabelas novas e guarda o original como backup
 async function migrarDadosLegados(conexao, dados) {
   const avisos = [];
   const lista = chave => (Array.isArray(dados[chave]) ? dados[chave] : []);
@@ -190,7 +197,7 @@ async function migrarDadosLegados(conexao, dados) {
     patinetes.set(id, codigo);
   }
 
-  // Clientes (identificados pelos dígitos do telefone)
+  // Clientes (identificados pelo telefone)
   const clientePorIdLegado = new Map();
   const clientePorDigitos = new Map();
   const clientePorNome = new Map();
@@ -212,7 +219,7 @@ async function migrarDadosLegados(conexao, dados) {
   }
   for (const c of lista("clientes")) await obterCliente(c.nome, c.telefone, c.criadoEm, parseInt(c.id));
 
-  // Locações (em ordem cronológica; só a mais recente "ativa" de cada patinete continua ativa)
+  // Locações (só a mais recente "ativa" de cada patinete continua ativa)
   const locacoes = [...lista("locacoes")].sort((a, b) => new Date(a.dataInicio) - new Date(b.dataInicio));
   const ultimaAtivaPorPatinete = new Map();
   locacoes.forEach(l => { if (l.status === "ativa") ultimaAtivaPorPatinete.set(parseInt(l.patineteId), l); });
@@ -253,7 +260,7 @@ async function migrarDadosLegados(conexao, dados) {
     idsLocacao.add(inserida.id);
   }
 
-  // Manutenções (id repetido ou inválido: o banco gera um novo)
+  // Manutenções
   const idsManutencao = new Set();
   for (const m of lista("manutencoes")) {
     let id = parseInt(m.id);
@@ -272,7 +279,7 @@ async function migrarDadosLegados(conexao, dados) {
        numero(m.valor, 0, 100000, 0), status, dataOuAgora(m.data), status === "concluida" ? dataOuNulo(m.dataLiberacao) || dataOuAgora(m.data) : null]);
   }
 
-  // Histórico de usuários (ids antigos eram Date.now(); o banco gera novos em ordem cronológica)
+  // Histórico de usuários (novos ids, em ordem cronológica)
   const historico = [...lista("historicoUsuarios")].sort((a, b) => new Date(a.data) - new Date(b.data));
   for (const h of historico) {
     const usuarioId = Number.isInteger(parseInt(h.usuarioId)) && [...usuarios.values()].includes(parseInt(h.usuarioId)) ? parseInt(h.usuarioId) : null;
@@ -285,7 +292,7 @@ async function migrarDadosLegados(conexao, dados) {
   await salvarConfiguracoes(conexao, { ...CONFIG_PADRAO, ...(dados.configuracoes || {}) });
   await ajustarSequencias(conexao);
 
-  // Status do patinete coerente com as locações/manutenções migradas
+  // Ajusta o status dos patinetes conforme as locações ativas
   await conexao.query(`
     UPDATE patinetes p SET status = 'livre'
      WHERE p.status = 'locado' AND NOT EXISTS (SELECT 1 FROM locacoes l WHERE l.patinete_id = p.id AND l.status = 'ativa')`);
@@ -293,7 +300,7 @@ async function migrarDadosLegados(conexao, dados) {
     UPDATE patinetes p SET status = 'locado'
      WHERE p.status <> 'locado' AND EXISTS (SELECT 1 FROM locacoes l WHERE l.patinete_id = p.id AND l.status = 'ativa')`);
 
-  // A tabela antiga é mantida como backup (renomeada), nunca apagada.
+  // A tabela antiga vira backup (sistema_legado)
   const { rows: [{ nome }] } = await conexao.query(
     "SELECT CASE WHEN to_regclass('public.sistema_legado') IS NULL THEN 'sistema_legado' ELSE 'sistema_legado_' || to_char(now(), 'YYYYMMDDHH24MISS') END AS nome");
   await conexao.query(`ALTER TABLE sistema RENAME TO ${nome}`);
