@@ -100,15 +100,33 @@ function formatarDataHora(data) {
   return Number.isNaN(valor.getTime()) ? "Não informado" : valor.toLocaleString("pt-BR");
 }
 
-async function carregarUsuarios() {
+// Usado pela atualização automática: evita redesenhar a lista sem mudanças
+// e avisa quando chega um cadastro novo aguardando aprovação.
+let assinaturaUsuarios = null;
+let pendentesConhecidos = null;
+
+async function carregarUsuarios({ automatico = false } = {}) {
   const lista = document.getElementById("listaUsuarios");
   const contador = document.getElementById("contadorPendentes");
   if (!lista) return;
 
   try {
     if (!pontosAdmin.length) pontosAdmin = await api.getPontos();
-    usuariosAdmin = (await api.getUsuarios()).filter(usuario => usuario.usuario !== "admin");
-    const pendentes = usuariosAdmin.filter(usuario => usuario.status === "pendente").length;
+    const usuarios = (await api.getUsuarios()).filter(usuario => usuario.usuario !== "admin");
+    const assinatura = JSON.stringify(usuarios);
+    if (automatico && assinatura === assinaturaUsuarios) return;
+    assinaturaUsuarios = assinatura;
+    usuariosAdmin = usuarios;
+
+    const idsPendentes = usuariosAdmin.filter(usuario => usuario.status === "pendente").map(usuario => usuario.id);
+    if (pendentesConhecidos) {
+      const novos = usuariosAdmin.filter(usuario => idsPendentes.includes(usuario.id) && !pendentesConhecidos.has(usuario.id));
+      if (novos.length === 1) mostrarToastAdmin(`Novo cadastro aguardando aprovação: ${novos[0].nome}`);
+      if (novos.length > 1) mostrarToastAdmin(`${novos.length} novos cadastros aguardando aprovação`);
+    }
+    pendentesConhecidos = new Set(idsPendentes);
+
+    const pendentes = idsPendentes.length;
     contador.textContent = `${pendentes} ${pendentes === 1 ? "pendente" : "pendentes"}`;
     const contadorMenu = document.getElementById("contadorMenuPendentes");
     if (contadorMenu) {
@@ -117,6 +135,7 @@ async function carregarUsuarios() {
     }
     filtrarUsuarios();
   } catch (error) {
+    if (automatico) return; // falha momentânea na atualização automática: mantém a lista atual
     lista.innerHTML = '<p class="usuarios-vazio">Não foi possível carregar os usuários.</p>';
     mostrarToastAdmin(error.message);
   }
@@ -323,13 +342,20 @@ async function abrirHistoricoManutencao(patineteId) {
   } catch (error) { mostrarToastAdmin(error.message); }
 }
 
-async function carregarCentralAdmin() {
+let assinaturaCentral = null;
+
+async function carregarCentralAdmin({ automatico = false } = {}) {
   try {
     const central = await api.getCentralAdmin();
+    const assinatura = JSON.stringify(central);
+    if (automatico && assinatura === assinaturaCentral) return;
+    assinaturaCentral = assinatura;
     renderizarAlertasAdmin(central.alertas);
     renderizarOperadoresAdmin(central.operadores);
     renderizarDesempenhoAdmin(central.desempenho);
-  } catch (error) { mostrarToastAdmin(error.message); }
+  } catch (error) {
+    if (!automatico) mostrarToastAdmin(error.message); // sem toast repetido a cada 15 s
+  }
 }
 
 function renderizarAlertasAdmin(alertas) {
@@ -407,3 +433,33 @@ carregarHistoricoUsuarios();
 carregarManutencoesAdmin();
 carregarCentralAdmin();
 carregarConfiguracoesSistema();
+
+// ATUALIZAÇÃO AUTOMÁTICA
+// Novos cadastros, alertas e operadores online aparecem sem recarregar a página.
+// Não atualiza com a aba escondida, com uma janela (modal) aberta ou enquanto o
+// admin está usando um campo da lista (ex.: escolhendo o ponto de um operador).
+const INTERVALO_ATUALIZACAO_MS = 15000;
+let atualizandoAdmin = false;
+
+function adminEstaInteragindo() {
+  const modal = document.getElementById("modalAdmin");
+  if (modal && modal.style.display === "flex") return true;
+  const ativo = document.activeElement;
+  return Boolean(ativo && ativo.closest("#listaUsuarios, #listaOperadoresAdmin") && ["SELECT", "INPUT", "TEXTAREA"].includes(ativo.tagName));
+}
+
+async function atualizarPainelAutomaticamente() {
+  if (document.hidden || atualizandoAdmin || adminEstaInteragindo()) return;
+  atualizandoAdmin = true;
+  try {
+    await Promise.all([carregarUsuarios({ automatico: true }), carregarCentralAdmin({ automatico: true })]);
+  } finally {
+    atualizandoAdmin = false;
+  }
+}
+
+setInterval(atualizarPainelAutomaticamente, INTERVALO_ATUALIZACAO_MS);
+// Ao voltar para a aba, atualiza na hora
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) atualizarPainelAutomaticamente();
+});
