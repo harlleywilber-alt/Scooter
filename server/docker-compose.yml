@@ -1,3 +1,6 @@
+# Nome fixo do projeto: mantém o volume "scooter_postgres_data" com os dados do banco
+name: scooter
+
 services:
   postgres:
     image: postgres:16
