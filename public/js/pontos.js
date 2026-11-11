@@ -1,4 +1,4 @@
-// Gestão dos pontos de distribuição
+// E-Scooter GO - Pontos de distribuição
 
 let pontos = [];
 
@@ -15,8 +15,11 @@ function mostrarToast(msg) {
   }, 2800);
 }
 
-// Carregar pontos da API
-// automatico = true: atualização periódica (só redesenha se mudou, sem aviso de erro)
+// ==========================================
+// CARREGAMENTO
+// ==========================================
+
+// automatico = true: atualização periódica, só redesenha se mudou
 let assinaturaPontos = null;
 
 async function carregarPontos({ automatico = false } = {}) {
@@ -85,13 +88,14 @@ function renderizarPontos() {
       </div>
     `;
 
-    // Listener em vez de onclick inline: nomes com apóstrofo ou aspas quebravam o JS.
     card.querySelector(".btn-deletar-ponto").addEventListener("click", () => confirmarExcluirPonto(ponto.id, ponto.nome));
     lista.appendChild(card);
   });
 }
 
-// MODAL NOVO PONTO
+// ==========================================
+// NOVO PONTO
+// ==========================================
 function abrirModalNovoPonto() {
   document.getElementById("nomePontoInput").value = "";
   document.getElementById("localizacaoPontoInput").value = "";
@@ -140,8 +144,9 @@ async function confirmarExcluirPonto(id, nome) {
   }
 }
 
-// INICIALIZAÇÃO E SINCRONIZAÇÃO PERIÓDICA
+// ==========================================
+// INICIALIZAÇÃO
+// ==========================================
 carregarPontos();
-// Intervalo de atualização: 15 s (antes era 3 s, mesmo com a aba escondida e
-// redesenhando sempre). Pausa com a aba escondida e só redesenha se algo mudou.
+// Atualização automática a cada 15 s
 iniciarAtualizacaoAutomatica(() => carregarPontos({ automatico: true }), { intervaloMs: 15000 });
