@@ -1,4 +1,4 @@
-// Controle da frota
+// E-Scooter GO - Tela de patinetes (operação da frota)
 
 const STATUS = {
   LIVRE: "livre",
@@ -42,8 +42,11 @@ window.onclick = function (e) {
   if (e.target.id === "modal") fecharModal();
 };
 
-// Carregar dados reais do servidor / banco de dados
-// automatico = true: sincronização periódica (sem aviso de erro a cada rodada)
+// ==========================================
+// CARREGAMENTO E SINCRONIZAÇÃO
+// ==========================================
+
+// automatico = true: sincronização periódica, sem aviso de erro a cada rodada
 async function carregarDadosDoServidor({ automatico = false } = {}) {
   try {
     const [patinetes, pontos, configuracoes] = await Promise.all([
@@ -52,8 +55,7 @@ async function carregarDadosDoServidor({ automatico = false } = {}) {
       api.getConfiguracoes()
     ]);
 
-    // Se uma janela foi aberta enquanto os dados chegavam, não troca a lista
-    // por baixo dela; a próxima rodada atualiza.
+    // Não troca a lista por baixo de uma janela aberta
     if (automatico && janelaAberta()) return;
 
     bikes = patinetes.map(p => ({
@@ -78,7 +80,7 @@ function janelaAberta() {
   return Boolean(modal && modal.style.display === "flex");
 }
 
-// Aviso quando uma locação estoura o tempo (uma vez por locação)
+// Aviso de locação atrasada (uma vez por locação)
 const atrasosAvisados = new Set();
 let primeiraVerificacaoAtraso = true;
 function verificarAtrasos() {
@@ -98,7 +100,9 @@ function verificarAtrasos() {
   primeiraVerificacaoAtraso = false;
 }
 
+// ==========================================
 // ADICIONAR PATINETES
+// ==========================================
 async function abrirModalAdicionarPatinetes() {
   try {
     pontosDisponiveis = await api.getPontos();
@@ -147,7 +151,9 @@ async function confirmarAdicionarPatinetes() {
   }
 }
 
+// ==========================================
 // REMOVER PATINETE
+// ==========================================
 function abrirModalRemoverPatinete() {
   const c = document.getElementById("modalContent");
   c.innerHTML = `
@@ -179,7 +185,9 @@ async function confirmarRemoverPatinete() {
   }
 }
 
-// Opções do patinete
+// ==========================================
+// OPÇÕES DO PATINETE
+// ==========================================
 function abrirOpcoesPatinete(id) {
   const b = bikes.find(x => x.id === id);
   if (!b) return;
@@ -288,7 +296,7 @@ async function abrirHistoricoCliente(id) {
 }
 
 // ==========================================
-// INICIAR LOCAÇÃO DIRETA (BOTÃO DA BARRA)
+// NOVA LOCAÇÃO
 // ==========================================
 async function abrirNovaLocacaoGeral() {
   await carregarDadosDoServidor();
@@ -300,7 +308,6 @@ async function abrirNovaLocacaoGeral() {
   abrirLocacao(livres[0].id);
 }
 
-// Nova locação
 function abrirLocacao(id) {
   const b = bikes.find(x => x.id === id);
   if (!b) return;
@@ -394,7 +401,7 @@ async function confirmarLocacao() {
 }
 
 // ==========================================
-// MODAL MUDAR PONTO DE DISTRIBUIÇÃO
+// MUDAR PONTO DE DISTRIBUIÇÃO
 // ==========================================
 async function abrirModalMudarPonto(id) {
   const b = bikes.find(x => x.id === id);
@@ -532,7 +539,6 @@ async function confirmarEnviarManutencao(id) {
     return mostrarToast("Informe o motivo da manutenção");
   }
 
-  // Validação do valor no frontend
   if (!Number.isFinite(valor) || valor < 0 || valor > 100000) {
     return mostrarToast(
       "Valor da manutenção inválido. Informe um valor entre R$ 0,00 e R$ 100.000,00."
@@ -585,7 +591,9 @@ async function confirmarLiberarManutencao(id) {
   }
 }
 
-// Atualização dos cards
+// ==========================================
+// RENDERIZAÇÃO DOS CARDS
+// ==========================================
 function atualizarContadores() {
   const qtdLivre = document.getElementById("qtdLivre");
   const qtdLocado = document.getElementById("qtdLocado");
@@ -612,7 +620,6 @@ function render() {
 
   grid.innerHTML = "";
 
-  // Ordena patinetes pelo ID numérico
   const bikesOrdenadas = [...bikes].sort((a, b) => a.id - b.id);
   const total = bikesOrdenadas.length;
 
@@ -689,18 +696,18 @@ function render() {
   });
 }
 
-// INICIALIZAÇÃO E LOOP DE TEMPO REAL
+// ==========================================
+// INICIALIZAÇÃO
+// ==========================================
 carregarDadosDoServidor();
 
-// Atualiza contadores e timers a cada 1 segundo (cálculo local, sem ir ao servidor)
+// Cronômetros e avisos de atraso: a cada 1 s, sem ir ao servidor
 setInterval(() => {
   render();
   verificarAtrasos();
 }, 1000);
 
-// Sincroniza com o servidor a cada 10 segundos: locações, devoluções e
-// manutenções feitas por outros operadores aparecem sem recarregar a página.
-// Pausa com uma janela aberta (locação, devolução...) ou com a aba escondida.
+// Sincroniza com o servidor a cada 10 s (pausa com janela aberta ou aba escondida)
 iniciarAtualizacaoAutomatica(() => carregarDadosDoServidor({ automatico: true }), {
   intervaloMs: 10000,
   podeAtualizar: () => !janelaAberta() && !bloqueado
