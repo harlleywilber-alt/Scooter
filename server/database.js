@@ -1,33 +1,21 @@
+// Camada de dados do E-Scooter GO sobre o esquema relacional (database.sql).
+//
+// Cada função faz apenas as consultas de que precisa, sempre parametrizadas
+// ($1, $2...). Operações que mudam mais de uma tabela ou dependem do estado
+// atual (alugar, devolver, manutenção...) rodam em transação e travam só as
+// linhas envolvidas com SELECT ... FOR UPDATE.
+//
+// Os nomes das funções e o formato dos objetos devolvidos são os mesmos da
+// versão anterior, então server.js e o front-end não precisam mudar.
 const crypto = require("crypto");
-const { Pool } = require("pg");
+const { consultar, transacao, definirInicializador, erroDeValidacao, BancoIndisponivelError } = require("./conexao");
+const { inicializarBanco, hashSenha, ITERACOES_SENHA } = require("./inicializacao");
 
-const pool = new Pool({
-  host: "localhost",
-  port: 5432,
-  database: "escooter",
-  user: "postgres",
-  password: "postgres"
-});
+definirInicializador(inicializarBanco);
 
-// Funções de Criptografia Segura (Hash com Salt via PBKDF2)
+// --- Utilitários -------------------------------------------------------------
 async function gerarSalt() {
   return crypto.randomBytes(16).toString("hex");
-}
-
-const ITERACOES_SENHA = 120000;
-const CONFIG_PADRAO = {
-  nomeAdmin: "Administrador Geral",
-  cargoAdmin: "Gestor do Sistema",
-  nomeEmpresa: "E-Scooter Go",
-  precos: { 15: 20, 30: 30, 45: 45 },
-  temposDisponiveis: [15, 30, 45],
-  multaPorMinuto: 1,
-  limitePatinetesLocacao: 5,
-  alertaManutencaoDias: 3
-};
-
-async function hashSenha(senha, salt, iteracoes = ITERACOES_SENHA) {
-  return crypto.pbkdf2Sync(senha, salt, iteracoes, 64, "sha512").toString("hex");
 }
 
 async function verificarSenha(senhaDigitada, hashArmazenado, salt, iteracoes = ITERACOES_SENHA) {
@@ -35,572 +23,400 @@ async function verificarSenha(senhaDigitada, hashArmazenado, salt, iteracoes = I
   return hashTeste.length === hashArmazenado.length && crypto.timingSafeEqual(Buffer.from(hashTeste), Buffer.from(hashArmazenado));
 }
 
-// Estrutura inicial do Banco de Dados
-async function obterEstadoInicial() {
-  const saltAdmin = await gerarSalt();
-  const senhaHashAdmin = await hashSenha("admin123", saltAdmin);
-
-  return {
-    usuarios: [
-      {
-        id: 1,
-        nome: "Administrador Geral",
-        usuario: "admin",
-        senhaHash: senhaHashAdmin,
-        salt: saltAdmin,
-        iteracoesSenha: ITERACOES_SENHA,
-        cargo: "Gestor do Sistema",
-        nivel: "administrador",
-        status: "aprovado",
-        criadoEm: new Date().toISOString()
-      }
-    ],
-    pontos: [
-      {
-        id: 1,
-        nome: "Uni goias",
-        localizacao: "-16.691576, -49.310984",
-        criadoEm: new Date().toISOString()
-      },
-      {
-        id: 2,
-        nome: "Hidrolandia",
-        localizacao: "Praça lago",
-        criadoEm: new Date().toISOString()
-      },
-      {
-        id: 3,
-        nome: "Teste",
-        localizacao: "Sem localização",
-        criadoEm: new Date().toISOString()
-      }
-    ],
-    patinetes: [
-      { id: 1, codigo: "PAT001", modelo: "E-Scooter Pro Max", bateria: 100, status: "livre", pontoId: 2, pontoNome: "Hidrolandia", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 2, codigo: "PAT002", modelo: "E-Scooter Pro Max", bateria: 85, status: "livre", pontoId: 2, pontoNome: "Hidrolandia", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 3, codigo: "PAT003", modelo: "E-Scooter Urban", bateria: 90, status: "livre", pontoId: 2, pontoNome: "Hidrolandia", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 4, codigo: "PAT004", modelo: "E-Scooter Urban", bateria: 70, status: "livre", pontoId: 2, pontoNome: "Hidrolandia", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 5, codigo: "PAT005", modelo: "E-Scooter Lite", bateria: 95, status: "livre", pontoId: null, pontoNome: "Sem ponto", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 6, codigo: "PAT006", modelo: "E-Scooter Lite", bateria: 100, status: "livre", pontoId: null, pontoNome: "Sem ponto", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 7, codigo: "PAT007", modelo: "E-Scooter Lite", bateria: 100, status: "livre", pontoId: 3, pontoNome: "Teste", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 8, codigo: "PAT008", modelo: "E-Scooter Urban", bateria: 95, status: "livre", pontoId: 3, pontoNome: "Teste", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 9, codigo: "PAT009", modelo: "E-Scooter Pro Max", bateria: 100, status: "livre", pontoId: 3, pontoNome: "Teste", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() },
-      { id: 10, codigo: "PAT010", modelo: "E-Scooter Pro Max", bateria: 100, status: "livre", pontoId: 1, pontoNome: "Uni goias", cliente: "", telefone: "", pagamento: "", tempo: 0, valorBase: 0, inicio: null, criadoEm: new Date().toISOString() }
-    ],
-    locacoes: [],
-    manutencoes: [],
-    clientes: [],
-    historicoUsuarios: [],
-    configuracoes: { ...CONFIG_PADRAO, precos: { ...CONFIG_PADRAO.precos } }
-  };
+// IDs vindos da URL/corpo: inteiro positivo ou null (null nunca encontra registro)
+function idOuNulo(valor) {
+  const n = Number(valor);
+  return Number.isInteger(n) && n > 0 && n <= 2147483647 ? n : null;
 }
 
-// Leitura e Escrita Síncrona Segura
-async function lerDB() {
-  try {
-    const resultado = await pool.query(
-      "SELECT dados FROM sistema WHERE id = 1"
-    );
+// Erro de regra de negócio: a rota responde 400 com esta mensagem
+const falha = mensagem => erroDeValidacao(mensagem);
 
-    let db;
-    if (resultado.rows.length === 0) {
-      db = await obterEstadoInicial();
-
-      await pool.query(
-        `
-        INSERT INTO sistema (id, dados, atualizado_em)
-        VALUES (1, $1, CURRENT_TIMESTAMP)
-        `,
-        [db]
-      );
-    } else {
-      db = resultado.rows[0].dados;
-    }
-
-    if (!Array.isArray(db.historicoUsuarios)) db.historicoUsuarios = [];
-    if (!Array.isArray(db.clientes)) db.clientes = [];
-    (db.locacoes || []).forEach(locacao => {
-      const telefone = String(locacao.telefone || "").replace(/\D/g, "");
-      let cliente = telefone ? db.clientes.find(c => String(c.telefone || "").replace(/\D/g, "") === telefone) : null;
-      if (!cliente && locacao.cliente) {
-        cliente = { id: db.clientes.length ? Math.max(...db.clientes.map(c => c.id)) + 1 : 1, nome: locacao.cliente, telefone: locacao.telefone || "", criadoEm: locacao.dataInicio };
-        db.clientes.push(cliente);
-      }
-      if (cliente && !locacao.clienteId) locacao.clienteId = cliente.id;
-    });
-    db.usuarios = (db.usuarios || []).map(u => ({
-      ...u,
-      nivel: u.usuario === "admin" ? "administrador" : (u.nivel === "administrador" ? "administrador" : "operador"),
-      status: u.status || "aprovado"
-    }));
-    db.configuracoes = {
-      ...CONFIG_PADRAO,
-      ...(db.configuracoes || {}),
-      precos: { ...CONFIG_PADRAO.precos, ...((db.configuracoes || {}).precos || {}) }
-    };
-
-    return db;
-
-  } catch (error) {
-    console.error("Erro ao ler banco de dados:", error);
-    return await obterEstadoInicial();
-  }
+// Datas: gravadas como instante (TIMESTAMPTZ); meses/dias dos relatórios no
+// fuso da operação. Ex.: 22h do dia 31 em Brasília é 01h UTC do dia 1.
+const FUSO_HORARIO = process.env.APP_TZ || "America/Sao_Paulo";
+const formatadorDia = new Intl.DateTimeFormat("en-CA", { timeZone: FUSO_HORARIO, year: "numeric", month: "2-digit", day: "2-digit" });
+function diaLocal(data) {
+  const d = data instanceof Date ? data : new Date(data);
+  return data && Number.isFinite(d.getTime()) ? formatadorDia.format(d) : "";
+}
+function mesLocal(data) {
+  return diaLocal(data).slice(0, 7);
+}
+function mesAnteriorDe(mes) {
+  const [ano, m] = mes.split("-").map(Number);
+  return m === 1 ? `${ano - 1}-12` : `${ano}-${String(m - 1).padStart(2, "0")}`;
 }
 
-async function salvarDB(dados) {
-  try {
-    await pool.query(
-      `
-      INSERT INTO sistema (id, dados, atualizado_em)
-      VALUES (1, $1, CURRENT_TIMESTAMP)
-      ON CONFLICT (id)
-      DO UPDATE SET
-        dados = EXCLUDED.dados,
-        atualizado_em = CURRENT_TIMESTAMP
-      `,
-      [dados]
-    );
-
-    return true;
-
-  } catch (error) {
-    console.error("Erro ao salvar no PostgreSQL:", error);
-    return false;
-  }
+// Multa: minutos completos de atraso x multa por minuto
+// (mesma regra exibida em patijs.js -> calcularValorAtual).
+function calcularMulta(locacao, multaPorMinuto, agoraMs = Date.now()) {
+  const inicioMs = new Date(locacao.dataInicio).getTime();
+  if (!Number.isFinite(inicioMs)) return 0;
+  const fimPrevistoMs = inicioMs + Number(locacao.tempoMinutos || 0) * 60000;
+  const atrasoMin = Math.floor(Math.max(0, agoraMs - fimPrevistoMs) / 60000);
+  return Math.round(atrasoMin * Math.max(0, Number(multaPorMinuto) || 0) * 100) / 100;
 }
 
-// --- USUÁRIOS & APROVAÇÃO ---
+// --- Consultas reutilizadas (mesmo formato de objeto que a API já devolvia) ---
+const SELECT_PATINETE = `
+  SELECT p.id, p.codigo, p.modelo, p.bateria, p.status,
+         p.ponto_id AS "pontoId", COALESCE(pt.nome, 'Sem ponto') AS "pontoNome",
+         COALESCE(c.nome, '') AS cliente, COALESCE(c.telefone, '') AS telefone,
+         COALESCE(l.pagamento, '') AS pagamento, COALESCE(l.tempo_minutos, 0) AS tempo,
+         COALESCE(l.valor_base, 0) AS "valorBase", l.data_inicio AS inicio, p.criado_em AS "criadoEm"
+    FROM patinetes p
+    LEFT JOIN pontos pt ON pt.id = p.ponto_id
+    LEFT JOIN locacoes l ON l.patinete_id = p.id AND l.status = 'ativa'
+    LEFT JOIN clientes c ON c.id = l.cliente_id`;
+
+const SELECT_LOCACAO = `
+  SELECT l.id, l.patinete_id AS "patineteId", l.patinete_codigo AS "patineteCodigo",
+         l.ponto_id AS "pontoId", l.ponto_nome AS "pontoNome",
+         c.nome AS cliente, l.cliente_id AS "clienteId", c.telefone,
+         l.tempo_minutos AS "tempoMinutos", l.valor_base AS "valorBase", l.multa, l.valor_total AS "valorTotal",
+         l.pagamento, l.operador_usuario AS "usuarioOperador", l.status,
+         l.data_inicio AS "dataInicio", l.data_fim AS "dataFim"
+    FROM locacoes l
+    JOIN clientes c ON c.id = l.cliente_id`;
+
+const SELECT_MANUTENCAO = `
+  SELECT m.id, m.patinete_id AS "patineteId", m.patinete_codigo AS "patineteCodigo",
+         m.ponto_id AS "pontoId", m.ponto_nome AS "pontoNome", m.descricao, m.prioridade, m.diagnostico,
+         m.responsavel_servico AS "responsavelServico", m.previsao_conclusao AS "previsaoConclusao",
+         m.valor, m.usuario_login AS usuario, m.status, m.data, m.data_liberacao AS "dataLiberacao"
+    FROM manutencoes m`;
+
+const COLUNAS_USUARIO = `
+  id, nome, usuario, cargo, nivel, status, criado_em AS "criadoEm",
+  ultimo_login AS "ultimoLogin", COALESCE(ultima_atividade, ultimo_login) AS "ultimaAtividade",
+  bloqueado, ponto_id AS "pontoId"`;
+
+async function buscarPatinetes(executor, ids) {
+  const { rows } = await executor.query(`${SELECT_PATINETE} WHERE p.id = ANY($1::int[]) ORDER BY p.id`, [ids]);
+  return rows;
+}
+
+async function travarUsuario(cliente, id) {
+  const { rows: [user] } = await cliente.query(
+    `SELECT id, nome, usuario, nivel, status, ponto_id AS "pontoId", bloqueado FROM usuarios WHERE id = $1 FOR UPDATE`,
+    [idOuNulo(id)]);
+  if (!user) throw falha("Usuário não encontrado.");
+  return user;
+}
+
+async function registrarHistorico(cliente, acao, user, responsavel = "admin", detalhes = "") {
+  await cliente.query(
+    "INSERT INTO historico_usuarios (acao, usuario_id, usuario_nome, responsavel, detalhes) VALUES ($1, $2, $3, $4, $5)",
+    [acao, user.id, user.nome, String(responsavel || "sistema").slice(0, 40), detalhes]);
+}
+
+// --- USUÁRIOS & APROVAÇÃO ----------------------------------------------------
 async function listarUsuarios() {
-  const db = await lerDB();
-  return db.usuarios.map(u => ({
-    id: u.id,
-    nome: u.nome,
-    usuario: u.usuario,
-    cargo: u.cargo,
-    nivel: u.nivel || (u.usuario === "admin" ? "administrador" : "operador"),
-    status: u.status || "aprovado",
-    criadoEm: u.criadoEm,
-    ultimoLogin: u.ultimoLogin || null,
-    ultimaAtividade: u.ultimaAtividade || u.ultimoLogin || null,
-    bloqueado: Boolean(u.bloqueado),
-    pontoId: u.pontoId || null
-  }));
+  const { rows } = await consultar(`SELECT ${COLUNAS_USUARIO} FROM usuarios ORDER BY id`);
+  return rows;
 }
 
 async function buscarUsuarioPorLogin(usuario) {
-  const db = await lerDB();
-  return db.usuarios.find(u => u.usuario.toLowerCase() === usuario.toLowerCase());
+  const { rows: [user] } = await consultar(`SELECT ${COLUNAS_USUARIO} FROM usuarios WHERE lower(usuario) = lower($1)`, [String(usuario || "")]);
+  return user;
 }
 
 async function obterUsuarioSessao(id) {
-  const db = await lerDB();
-  const user = db.usuarios.find(u => u.id === parseInt(id));
-  if (!user) return null;
-  return {
-    id: user.id, nome: user.nome, usuario: user.usuario,
-    nivel: user.nivel || (user.usuario === "admin" ? "administrador" : "operador"),
-    status: user.status || "aprovado",
-    bloqueado: Boolean(user.bloqueado),
-    pontoId: user.pontoId || null
-  };
+  const { rows: [user] } = await consultar(
+    `SELECT id, nome, usuario, nivel, status, bloqueado, ponto_id AS "pontoId" FROM usuarios WHERE id = $1`, [idOuNulo(id)]);
+  return user || null;
 }
 
 async function cadastrarUsuario(nome, usuario, senha) {
-  const db = await lerDB();
-  if (buscarUsuarioPorLogin(usuario)) {
-    throw new Error("Nome de usuário já cadastrado!");
-  }
-
   const salt = await gerarSalt();
   const senhaHash = await hashSenha(senha, salt);
-
-  const novoUsuario = {
-    id: db.usuarios.length ? Math.max(...db.usuarios.map(u => u.id)) + 1 : 1,
-    nome: nome.trim(),
-    usuario: usuario.trim(),
-    senhaHash,
-    salt,
-    iteracoesSenha: ITERACOES_SENHA,
-    cargo: "Operador",
-    nivel: "operador",
-    pontoId: null,
-    status: "pendente",
-    criadoEm: new Date().toISOString()
-  };
-
-  db.usuarios.push(novoUsuario);
-  await salvarDB(db);
-
-  return {
-    id: novoUsuario.id,
-    nome: novoUsuario.nome,
-    usuario: novoUsuario.usuario,
-    cargo: novoUsuario.cargo,
-    status: novoUsuario.status
-  };
+  // O índice único usuarios_login_unico recusa logins repetidos (sem diferenciar maiúsculas)
+  const { rows: [novo] } = await consultar(
+    `INSERT INTO usuarios (nome, usuario, senha_hash, salt, iteracoes_senha, cargo, nivel, status)
+     VALUES ($1, $2, $3, $4, $5, 'Operador', 'operador', 'pendente')
+     RETURNING id, nome, usuario, cargo, status`,
+    [nome.trim(), usuario.trim(), senhaHash, salt, ITERACOES_SENHA]);
+  return novo;
 }
 
 async function autenticarUsuario(usuario, senha) {
-  const db = await lerDB();
-  const user = db.usuarios.find(u => u.usuario.toLowerCase() === usuario.toLowerCase());
+  const { rows: [user] } = await consultar(
+    `SELECT id, nome, usuario, cargo, nivel, status, bloqueado, ponto_id AS "pontoId",
+            senha_hash AS "senhaHash", salt, iteracoes_senha AS "iteracoesSenha"
+       FROM usuarios WHERE lower(usuario) = lower($1)`, [String(usuario)]);
   if (!user) return { erro: "Usuário ou senha inválidos." };
 
-  const iteracoesAtuais = user.iteracoesSenha || 1000;
-  const senhaValida = await verificarSenha(senha, user.senhaHash, user.salt, iteracoesAtuais);
+  const senhaValida = await verificarSenha(senha, user.senhaHash, user.salt, user.iteracoesSenha);
   if (!senhaValida) return { erro: "Usuário ou senha inválidos." };
 
-  if (iteracoesAtuais < ITERACOES_SENHA) {
-    user.salt = await gerarSalt();
-    user.senhaHash = await hashSenha(senha, user.salt);
-    user.iteracoesSenha = ITERACOES_SENHA;
+  // Senhas antigas com menos iterações são atualizadas no primeiro login correto
+  if (user.iteracoesSenha < ITERACOES_SENHA) {
+    const salt = await gerarSalt();
+    await consultar("UPDATE usuarios SET salt = $2, senha_hash = $3, iteracoes_senha = $4 WHERE id = $1",
+      [user.id, salt, await hashSenha(senha, salt), ITERACOES_SENHA]);
   }
 
-  const statusUser = user.status || "aprovado";
-  if (statusUser === "pendente") {
-    return { erro: "Sua conta está aguardando aprovação do administrador." };
-  }
-  if (statusUser === "recusado") {
-    return { erro: "Seu cadastro foi recusado pelo administrador." };
-  }
-  if (user.bloqueado) {
-    return { erro: "Seu acesso foi bloqueado temporariamente pelo administrador." };
-  }
+  if (user.status === "pendente") return { erro: "Sua conta está aguardando aprovação do administrador." };
+  if (user.status === "recusado") return { erro: "Seu cadastro foi recusado pelo administrador." };
+  if (user.bloqueado) return { erro: "Seu acesso foi bloqueado temporariamente pelo administrador." };
 
-  user.ultimoLogin = new Date().toISOString();
-  user.ultimaAtividade = user.ultimoLogin;
-  db.historicoUsuarios = db.historicoUsuarios || [];
-  db.historicoUsuarios.unshift({
-    id: Date.now(), acao: "login", usuarioId: user.id, usuarioNome: user.nome,
-    responsavel: user.usuario, data: user.ultimoLogin
+  await transacao(async cliente => {
+    await cliente.query("UPDATE usuarios SET ultimo_login = now(), ultima_atividade = now() WHERE id = $1", [user.id]);
+    await registrarHistorico(cliente, "login", user, user.usuario);
   });
-  await salvarDB(db);
 
   return {
     usuario: {
-      id: user.id,
-      nome: user.nome,
-      usuario: user.usuario,
-      cargo: user.cargo,
-      nivel: user.nivel || (user.usuario === "admin" ? "administrador" : "operador"),
-      pontoId: user.pontoId || null,
-      status: statusUser
+      id: user.id, nome: user.nome, usuario: user.usuario, cargo: user.cargo,
+      nivel: user.nivel, pontoId: user.pontoId, status: user.status
     }
   };
 }
 
 async function registrarAtividadeUsuario(id) {
-  const db = await lerDB();
-  const user = db.usuarios.find(u => u.id === parseInt(id));
-  if (!user) return;
-  const agora = Date.now();
-  const ultima = new Date(user.ultimaAtividade || 0).getTime();
-  if (!Number.isFinite(ultima) || agora - ultima >= 60000) {
-    user.ultimaAtividade = new Date(agora).toISOString();
-    await salvarDB(db);
-  }
+  // No máximo uma gravação por minuto por usuário
+  await consultar(
+    `UPDATE usuarios SET ultima_atividade = now()
+      WHERE id = $1 AND (ultima_atividade IS NULL OR ultima_atividade < now() - interval '1 minute')`, [idOuNulo(id)]);
 }
 
 async function alterarBloqueioUsuario(id, bloqueado, responsavel = "admin") {
-  const db = await lerDB();
-  const user = db.usuarios.find(u => u.id === parseInt(id));
-  if (!user) throw new Error("Usuário não encontrado.");
-  if (user.usuario === "admin") throw new Error("O administrador principal não pode ser bloqueado.");
-  user.bloqueado = Boolean(bloqueado);
-  await registrarHistorico(db, user.bloqueado ? "bloqueio temporário" : "desbloqueio", user, responsavel);
-  await salvarDB(db);
-  return { id: user.id, nome: user.nome, bloqueado: user.bloqueado };
-}
-
-async function registrarHistorico(db, acao, user, responsavel = "admin", detalhes = "") {
-  db.historicoUsuarios = db.historicoUsuarios || [];
-  db.historicoUsuarios.unshift({
-    id: Date.now(), acao, usuarioId: user.id, usuarioNome: user.nome,
-    responsavel, detalhes, data: new Date().toISOString()
+  return transacao(async cliente => {
+    const user = await travarUsuario(cliente, id);
+    if (user.usuario === "admin") throw falha("O administrador principal não pode ser bloqueado.");
+    await cliente.query("UPDATE usuarios SET bloqueado = $2 WHERE id = $1", [user.id, Boolean(bloqueado)]);
+    await registrarHistorico(cliente, bloqueado ? "bloqueio temporário" : "desbloqueio", user, responsavel);
+    return { id: user.id, nome: user.nome, bloqueado: Boolean(bloqueado) };
   });
 }
 
 async function alterarStatusUsuario(id, novoStatus, responsavel = "admin") {
-  const db = await lerDB();
-  const user = db.usuarios.find(u => u.id === parseInt(id));
-  if (!user) throw new Error("Usuário não encontrado.");
-  if (user.usuario === "admin") throw new Error("Não é possível alterar a conta do Administrador principal.");
-  if (novoStatus === "aprovado" && (user.nivel || "operador") === "operador" && !user.pontoId) {
-    throw new Error("Selecione o ponto de trabalho antes de aprovar o operador.");
-  }
-
-  user.status = novoStatus;
-  await registrarHistorico(db, novoStatus === "aprovado" ? "aprovação" : "recusa", user, responsavel);
-  await salvarDB(db);
-
-  return {
-    id: user.id,
-    nome: user.nome,
-    usuario: user.usuario,
-    status: user.status
-  };
+  return transacao(async cliente => {
+    const user = await travarUsuario(cliente, id);
+    if (user.usuario === "admin") throw falha("Não é possível alterar a conta do Administrador principal.");
+    if (novoStatus === "aprovado" && user.nivel === "operador" && !user.pontoId) {
+      throw falha("Selecione o ponto de trabalho antes de aprovar o operador.");
+    }
+    await cliente.query("UPDATE usuarios SET status = $2 WHERE id = $1", [user.id, novoStatus]);
+    await registrarHistorico(cliente, novoStatus === "aprovado" ? "aprovação" : "recusa", user, responsavel);
+    return { id: user.id, nome: user.nome, usuario: user.usuario, status: novoStatus };
+  });
 }
 
 async function alterarNivelUsuario(id, nivel, responsavel = "admin") {
-  const db = await lerDB();
-  const user = db.usuarios.find(u => u.id === parseInt(id));
-  if (!user) throw new Error("Usuário não encontrado.");
-  if (user.usuario === "admin") throw new Error("O nível do administrador principal não pode ser alterado.");
-  const nivelAnterior = user.nivel || "operador";
-  user.nivel = nivel;
-  user.cargo = nivel === "administrador" ? "Administrador" : "Operador";
-  await registrarHistorico(db, "alteração de nível", user, responsavel, `${nivelAnterior} para ${nivel}`);
-  await salvarDB(db);
-  return { id: user.id, nome: user.nome, usuario: user.usuario, nivel: user.nivel, status: user.status };
+  return transacao(async cliente => {
+    const user = await travarUsuario(cliente, id);
+    if (user.usuario === "admin") throw falha("O nível do administrador principal não pode ser alterado.");
+    const cargo = nivel === "administrador" ? "Administrador" : "Operador";
+    await cliente.query("UPDATE usuarios SET nivel = $2, cargo = $3 WHERE id = $1", [user.id, nivel, cargo]);
+    await registrarHistorico(cliente, "alteração de nível", user, responsavel, `${user.nivel} para ${nivel}`);
+    return { id: user.id, nome: user.nome, usuario: user.usuario, nivel, status: user.status };
+  });
 }
 
 async function alterarPontoUsuario(id, pontoId, responsavel = "admin") {
-  const db = await lerDB();
-  const user = db.usuarios.find(u => u.id === parseInt(id));
-  if (!user) throw new Error("Usuário não encontrado.");
-  if (user.usuario === "admin") throw new Error("O administrador principal não utiliza ponto operacional.");
-  const ponto = pontoId ? db.pontos.find(p => p.id === parseInt(pontoId)) : null;
-  if (pontoId && !ponto) throw new Error("Ponto de distribuição não encontrado.");
-  const pontoAnterior = user.pontoId || "sem ponto";
-  user.pontoId = ponto ? ponto.id : null;
-  await registrarHistorico(db, "alteração de ponto", user, responsavel, `${pontoAnterior} para ${ponto ? ponto.nome : "sem ponto"}`);
-  await salvarDB(db);
-  return { id: user.id, nome: user.nome, usuario: user.usuario, pontoId: user.pontoId };
+  return transacao(async cliente => {
+    const user = await travarUsuario(cliente, id);
+    if (user.usuario === "admin") throw falha("O administrador principal não utiliza ponto operacional.");
+    let ponto = null;
+    if (pontoId) {
+      ({ rows: [ponto] } = await cliente.query("SELECT id, nome FROM pontos WHERE id = $1", [idOuNulo(pontoId)]));
+      if (!ponto) throw falha("Ponto de distribuição não encontrado.");
+    }
+    const { rows: [anterior] } = await cliente.query("SELECT nome FROM pontos WHERE id = $1", [user.pontoId]);
+    await cliente.query("UPDATE usuarios SET ponto_id = $2 WHERE id = $1", [user.id, ponto ? ponto.id : null]);
+    await registrarHistorico(cliente, "alteração de ponto", user, responsavel,
+      `${anterior ? anterior.nome : "sem ponto"} para ${ponto ? ponto.nome : "sem ponto"}`);
+    return { id: user.id, nome: user.nome, usuario: user.usuario, pontoId: ponto ? ponto.id : null };
+  });
 }
 
 async function excluirUsuarioRecusado(id, responsavel = "admin") {
-  const db = await lerDB();
-  const index = db.usuarios.findIndex(u => u.id === parseInt(id));
-  if (index < 0) throw new Error("Usuário não encontrado.");
-  const user = db.usuarios[index];
-  if (user.status !== "recusado") throw new Error("Somente cadastros recusados podem ser excluídos.");
-  await registrarHistorico(db, "exclusão", user, responsavel, "Cadastro recusado removido");
-  db.usuarios.splice(index, 1);
-  await salvarDB(db);
-  return user;
+  return transacao(async cliente => {
+    const user = await travarUsuario(cliente, id);
+    if (user.status !== "recusado") throw falha("Somente cadastros recusados podem ser excluídos.");
+    await registrarHistorico(cliente, "exclusão", user, responsavel, "Cadastro recusado removido");
+    await cliente.query("DELETE FROM usuarios WHERE id = $1", [user.id]);
+    return { id: user.id, nome: user.nome, usuario: user.usuario, status: user.status };
+  });
 }
 
 async function listarHistoricoUsuarios() {
-  const db = await lerDB();
-  return (db.historicoUsuarios || []).slice(0, 100);
+  const { rows } = await consultar(`
+    SELECT id, acao, usuario_id AS "usuarioId", usuario_nome AS "usuarioNome", responsavel, detalhes, data
+      FROM historico_usuarios ORDER BY data DESC, id DESC LIMIT 100`);
+  return rows;
 }
 
-// --- PONTOS DE DISTRIBUIÇÃO ---
+// --- PONTOS DE DISTRIBUIÇÃO --------------------------------------------------
 async function listarPontos() {
-  const db = await lerDB();
-  const patinetes = db.patinetes || [];
-
-  return (db.pontos || []).map(ponto => {
-    const bikesPonto = patinetes.filter(p => p.pontoId === ponto.id);
-    const total = bikesPonto.length;
-    const livres = bikesPonto.filter(p => p.status === "livre").length;
-    const alugados = bikesPonto.filter(p => p.status === "locado" || p.status === "atrasado").length;
-    const manutencao = bikesPonto.filter(p => p.status === "manutencao").length;
-
-    return {
-      id: ponto.id,
-      nome: ponto.nome,
-      localizacao: ponto.localizacao || "Sem localização",
-      total,
-      livres,
-      alugados,
-      manutencao,
-      criadoEm: ponto.criadoEm
-    };
-  });
+  const { rows } = await consultar(`
+    SELECT pt.id, pt.nome, pt.localizacao,
+           COUNT(p.id) AS total,
+           COUNT(*) FILTER (WHERE p.status = 'livre') AS livres,
+           COUNT(*) FILTER (WHERE p.status = 'locado') AS alugados,
+           COUNT(*) FILTER (WHERE p.status = 'manutencao') AS manutencao,
+           pt.criado_em AS "criadoEm"
+      FROM pontos pt
+      LEFT JOIN patinetes p ON p.ponto_id = pt.id
+     GROUP BY pt.id
+     ORDER BY pt.id`);
+  return rows;
 }
 
 async function adicionarPonto(nome, localizacao) {
-  const db = await lerDB();
-  if (!db.pontos) db.pontos = [];
-
-  const novoPonto = {
-    id: db.pontos.length ? Math.max(...db.pontos.map(p => p.id)) + 1 : 1,
-    nome: nome.trim(),
-    localizacao: (localizacao || "").trim() || "Sem localização",
-    criadoEm: new Date().toISOString()
-  };
-
-  db.pontos.push(novoPonto);
-  await salvarDB(db);
-
-  return {
-    ...novoPonto,
-    total: 0,
-    livres: 0,
-    alugados: 0,
-    manutencao: 0
-  };
+  const { rows: [ponto] } = await consultar(
+    `INSERT INTO pontos (nome, localizacao) VALUES ($1, $2)
+     RETURNING id, nome, localizacao, criado_em AS "criadoEm"`,
+    [nome.trim(), (localizacao || "").trim() || "Sem localização"]);
+  return { ...ponto, total: 0, livres: 0, alugados: 0, manutencao: 0 };
 }
 
 async function removerPonto(id) {
-  const db = await lerDB();
-  const index = (db.pontos || []).findIndex(p => p.id === parseInt(id));
-  if (index === -1) throw new Error("Ponto de distribuição não encontrado");
-
-  const removido = db.pontos.splice(index, 1)[0];
-  const pontoRestante = db.pontos.length > 0 ? db.pontos[0] : null;
-
-  db.patinetes.forEach(p => {
-    if (p.pontoId === parseInt(id)) {
-      p.pontoId = pontoRestante ? pontoRestante.id : null;
-      p.pontoNome = pontoRestante ? pontoRestante.nome : "Sem ponto";
-    }
+  return transacao(async cliente => {
+    const { rows: [removido] } = await cliente.query(
+      `SELECT id, nome, localizacao, criado_em AS "criadoEm" FROM pontos WHERE id = $1 FOR UPDATE`, [idOuNulo(id)]);
+    if (!removido) throw falha("Ponto de distribuição não encontrado");
+    // Mesmo comportamento de antes: patinetes vão para o primeiro ponto restante
+    const { rows: [restante] } = await cliente.query("SELECT id FROM pontos WHERE id <> $1 ORDER BY id LIMIT 1", [removido.id]);
+    await cliente.query("UPDATE patinetes SET ponto_id = $2 WHERE ponto_id = $1", [removido.id, restante ? restante.id : null]);
+    // usuarios.ponto_id vira NULL automaticamente (ON DELETE SET NULL)
+    await cliente.query("DELETE FROM pontos WHERE id = $1", [removido.id]);
+    return removido;
   });
-  db.usuarios.forEach(usuario => {
-    if (usuario.pontoId === parseInt(id)) usuario.pontoId = null;
-  });
-
-  await salvarDB(db);
-  return removido;
 }
 
-// --- PATINETES ---
+// --- PATINETES -----------------------------------------------------------------
 async function listarPatinetes(pontoId = null) {
-  const db = await lerDB();
-  return pontoId ? db.patinetes.filter(p => p.pontoId === parseInt(pontoId)) : db.patinetes;
+  // pontoId inválido (não numérico) filtra por -1, ou seja, nenhum patinete
+  const filtro = pontoId ? (idOuNulo(pontoId) ?? -1) : null;
+  const { rows } = await consultar(`${SELECT_PATINETE} WHERE ($1::int IS NULL OR p.ponto_id = $1) ORDER BY p.id`, [filtro]);
+  return rows;
 }
 
 async function buscarPatinetePorId(id) {
-  const db = await lerDB();
-  return db.patinetes.find(p => p.id === parseInt(id));
+  const { rows: [patinete] } = await consultar(`${SELECT_PATINETE} WHERE p.id = $1`, [idOuNulo(id)]);
+  return patinete;
 }
 
 async function adicionarPatinetes(qtd, pontoId = null) {
-  const db = await lerDB();
-  const ultimoId = db.patinetes.length ? Math.max(...db.patinetes.map(p => p.id)) : 0;
-  const novos = [];
-
-  let pId = pontoId ? parseInt(pontoId) : (db.pontos && db.pontos.length ? db.pontos[0].id : 1);
-  let pNome = "Ponto Central";
-  const pontoEncontrado = (db.pontos || []).find(p => p.id === pId);
-  if (pontoEncontrado) pNome = pontoEncontrado.nome;
-
-  for (let i = 1; i <= qtd; i++) {
-    const novoId = ultimoId + i;
-    const patinete = {
-      id: novoId,
-      codigo: `PAT${String(novoId).padStart(3, "0")}`,
-      modelo: "E-Scooter Pro Max",
-      bateria: 100,
-      status: "livre",
-      pontoId: pId,
-      pontoNome: pNome,
-      cliente: "",
-      telefone: "",
-      pagamento: "",
-      tempo: 0,
-      valorBase: 0,
-      inicio: null,
-      criadoEm: new Date().toISOString()
-    };
-    db.patinetes.push(patinete);
-    novos.push(patinete);
-  }
-
-  await salvarDB(db);
-  return novos;
-}
-
-async function removerPatinete(id) {
-  const db = await lerDB();
-  const index = db.patinetes.findIndex(p => p.id === parseInt(id));
-  if (index === -1) throw new Error("Patinete não encontrado");
-
-  if (db.patinetes[index].status === "locado") {
-    throw new Error("Não é possível remover um patinete que está alugado no momento!");
-  }
-
-  const removido = db.patinetes.splice(index, 1)[0];
-  await salvarDB(db);
-  return removido;
-}
-
-async function atualizarPatinete(id, dados) {
-  const db = await lerDB();
-  const index = db.patinetes.findIndex(p => p.id === parseInt(id));
-  if (index === -1) throw new Error("Patinete não encontrado");
-
-  if (Object.prototype.hasOwnProperty.call(dados, "pontoId")) {
-    if (dados.pontoId) {
-      const ponto = (db.pontos || []).find(p => p.id === parseInt(dados.pontoId));
-      if (!ponto) throw new Error("Ponto de distribuição não encontrado");
-      dados.pontoId = ponto.id;
-      dados.pontoNome = ponto.nome;
+  return transacao(async cliente => {
+    let ponto;
+    if (pontoId) {
+      ({ rows: [ponto] } = await cliente.query("SELECT id FROM pontos WHERE id = $1", [idOuNulo(pontoId)]));
+      if (!ponto) throw falha("Ponto de distribuição não encontrado");
     } else {
-      dados.pontoId = null;
-      dados.pontoNome = "Sem ponto";
+      ({ rows: [ponto] } = await cliente.query("SELECT id FROM pontos ORDER BY id LIMIT 1"));
     }
-  }
-
-  db.patinetes[index] = { ...db.patinetes[index], ...dados };
-  await salvarDB(db);
-  return db.patinetes[index];
-}
-
-// --- LOCAÇÕES ---
-async function listarLocacoes() {
-  const db = await lerDB();
-  return db.locacoes;
-}
-
-function normalizarTelefone(telefone = "") {
-  return String(telefone).replace(/\D/g, "");
-}
-
-function obterOuCriarCliente(db, nome, telefone) {
-  const telefoneNormalizado = normalizarTelefone(telefone);
-  let cliente = telefoneNormalizado
-    ? db.clientes.find(c => normalizarTelefone(c.telefone) === telefoneNormalizado)
-    : db.clientes.find(c => c.nome.toLowerCase() === nome.trim().toLowerCase());
-  if (!cliente) {
-    cliente = {
-      id: db.clientes.length ? Math.max(...db.clientes.map(c => c.id)) + 1 : 1,
-      nome: nome.trim(), telefone: telefone.trim(), criadoEm: new Date().toISOString()
-    };
-    db.clientes.push(cliente);
-  } else {
-    cliente.nome = nome.trim();
-    if (telefone) cliente.telefone = telefone.trim();
-  }
-  return cliente;
-}
-
-async function listarClientes() {
-  const db = await lerDB();
-  return db.clientes.map(cliente => {
-    const telefone = normalizarTelefone(cliente.telefone);
-    const locacoes = db.locacoes.filter(locacao => locacao.clienteId === cliente.id ||
-      (!locacao.clienteId && telefone && normalizarTelefone(locacao.telefone) === telefone));
-    const ordenadas = [...locacoes].sort((a, b) => new Date(b.dataInicio) - new Date(a.dataInicio));
-    return {
-      ...cliente,
-      totalLocacoes: locacoes.length,
-      totalGasto: locacoes.reduce((total, locacao) => total + (Number(locacao.valorTotal) || 0), 0),
-      ultimaLocacao: ordenadas[0]?.dataInicio || null
-    };
+    // IDs da sequência do banco; código PAT001, PAT002... (sem cortar acima de 999)
+    const { rows } = await cliente.query(`
+      INSERT INTO patinetes (id, codigo, ponto_id)
+      SELECT n, 'PAT' || CASE WHEN n < 1000 THEN lpad(n::text, 3, '0') ELSE n::text END, $2
+        FROM (SELECT nextval(pg_get_serial_sequence('patinetes', 'id'))::int AS n FROM generate_series(1, $1)) novos
+      RETURNING id`, [qtd, ponto ? ponto.id : null]);
+    return buscarPatinetes(cliente, rows.map(r => r.id));
   });
 }
 
+async function removerPatinete(id) {
+  return transacao(async cliente => {
+    const { rows: [alvo] } = await cliente.query("SELECT id, status FROM patinetes WHERE id = $1 FOR UPDATE", [idOuNulo(id)]);
+    if (!alvo) throw falha("Patinete não encontrado");
+    const { rows: [ativa] } = await cliente.query("SELECT 1 FROM locacoes WHERE patinete_id = $1 AND status = 'ativa'", [alvo.id]);
+    if (alvo.status === "locado" || ativa) throw falha("Não é possível remover um patinete que está alugado no momento!");
+    if (alvo.status === "manutencao") throw falha("Conclua a manutenção antes de remover o patinete.");
+    const [removido] = await buscarPatinetes(cliente, [alvo.id]);
+    // Histórico preservado: locações/manutenções guardam o código do patinete
+    await cliente.query("DELETE FROM patinetes WHERE id = $1", [alvo.id]);
+    return removido;
+  });
+}
+
+async function atualizarPatinete(id, dados) {
+  // Somente campos editáveis manualmente. Status, cliente, id etc. só mudam
+  // pelos fluxos próprios (locação, devolução, manutenção).
+  const tem = campo => Object.prototype.hasOwnProperty.call(dados || {}, campo);
+  const naoPermitidos = Object.keys(dados || {}).filter(campo => !["pontoId", "pontoNome", "modelo", "bateria"].includes(campo));
+  if (naoPermitidos.length) throw falha(`Campo(s) não editável(is): ${naoPermitidos.join(", ")}.`);
+
+  return transacao(async cliente => {
+    const { rows: [atual] } = await cliente.query("SELECT id FROM patinetes WHERE id = $1 FOR UPDATE", [idOuNulo(id)]);
+    if (!atual) throw falha("Patinete não encontrado");
+
+    const colunas = [];
+    const valores = [atual.id];
+    const definir = (coluna, valor) => {
+      valores.push(valor);
+      colunas.push(`${coluna} = $${valores.length}`);
+    };
+    if (tem("pontoId")) {
+      let novoPonto = null;
+      if (dados.pontoId) {
+        const { rows: [ponto] } = await cliente.query("SELECT id FROM pontos WHERE id = $1", [idOuNulo(dados.pontoId)]);
+        if (!ponto) throw falha("Ponto de distribuição não encontrado");
+        novoPonto = ponto.id;
+      }
+      definir("ponto_id", novoPonto);
+    }
+    if (tem("modelo")) {
+      const modelo = String(dados.modelo || "").trim();
+      if (!modelo || modelo.length > 60 || /[<>]/.test(modelo)) throw falha("Modelo inválido.");
+      definir("modelo", modelo);
+    }
+    if (tem("bateria")) {
+      const bateria = Number(dados.bateria);
+      if (!Number.isInteger(bateria) || bateria < 0 || bateria > 100) throw falha("Bateria deve ser um número inteiro entre 0 e 100.");
+      definir("bateria", bateria);
+    }
+    if (!colunas.length) throw falha("Nenhuma alteração informada.");
+
+    await cliente.query(`UPDATE patinetes SET ${colunas.join(", ")} WHERE id = $1`, valores);
+    const [patinete] = await buscarPatinetes(cliente, [atual.id]);
+    return patinete;
+  });
+}
+
+// --- CLIENTES & LOCAÇÕES ---------------------------------------------------------
+async function listarLocacoes() {
+  const { rows } = await consultar(`${SELECT_LOCACAO} ORDER BY l.id`);
+  return rows;
+}
+
+async function listarClientes() {
+  const { rows } = await consultar(`
+    SELECT c.id, c.nome, c.telefone, c.criado_em AS "criadoEm",
+           COUNT(l.id) AS "totalLocacoes",
+           COALESCE(SUM(l.valor_total), 0) AS "totalGasto",
+           MAX(l.data_inicio) AS "ultimaLocacao"
+      FROM clientes c
+      LEFT JOIN locacoes l ON l.cliente_id = c.id
+     GROUP BY c.id
+     ORDER BY c.id`);
+  return rows;
+}
+
 async function obterHistoricoCliente(id) {
-  const db = await lerDB();
-  const cliente = db.clientes.find(c => c.id === parseInt(id));
-  if (!cliente) throw new Error("Cliente não encontrado.");
-  const telefone = normalizarTelefone(cliente.telefone);
-  const locacoes = db.locacoes.filter(locacao => locacao.clienteId === cliente.id ||
-    (!locacao.clienteId && telefone && normalizarTelefone(locacao.telefone) === telefone));
-  return { cliente, locacoes: locacoes.sort((a, b) => new Date(b.dataInicio) - new Date(a.dataInicio)) };
+  const { rows: [cliente] } = await consultar(
+    `SELECT id, nome, telefone, criado_em AS "criadoEm" FROM clientes WHERE id = $1`, [idOuNulo(id)]);
+  if (!cliente) throw falha("Cliente não encontrado.");
+  const { rows: locacoes } = await consultar(`${SELECT_LOCACAO} WHERE l.cliente_id = $1 ORDER BY l.data_inicio DESC, l.id DESC`, [cliente.id]);
+  return { cliente, locacoes };
 }
 
 async function obterHistoricoPatinete(id) {
-  const db = await lerDB();
-  const patinete = db.patinetes.find(p => p.id === parseInt(id));
-  if (!patinete) throw new Error("Patinete não encontrado.");
+  const patinete = await buscarPatinetePorId(id);
+  if (!patinete) throw falha("Patinete não encontrado.");
+  const [{ rows: locacoes }, { rows: manutencoes }] = await Promise.all([
+    consultar(`${SELECT_LOCACAO} WHERE l.patinete_id = $1`, [patinete.id]),
+    consultar(`${SELECT_MANUTENCAO} WHERE m.patinete_id = $1`, [patinete.id])
+  ]);
   const eventos = [
-    ...db.locacoes.filter(l => l.patineteId === patinete.id).map(l => ({
+    ...locacoes.map(l => ({
       tipo: "locação", data: l.dataInicio, fim: l.dataFim || null, titulo: l.cliente,
       detalhes: `${l.tempoMinutos} min · R$ ${Number(l.valorTotal || 0).toFixed(2)} · ${l.status}`
     })),
-    ...db.manutencoes.filter(m => m.patineteId === patinete.id).map(m => ({
+    ...manutencoes.map(m => ({
       tipo: "manutenção", data: m.data, fim: m.dataLiberacao || null, titulo: m.descricao,
       detalhes: `R$ ${Number(m.valor || 0).toFixed(2)} · ${m.status}`
     }))
@@ -609,408 +425,418 @@ async function obterHistoricoPatinete(id) {
 }
 
 async function iniciarLocacoes(patineteIds, cliente, telefone, tempo, valorBase, pagamento, usuarioOperador = "Operador") {
-  const db = await lerDB();
-  const ids = [...new Set(patineteIds.map(Number))];
-  if (!ids.length) throw new Error("Selecione pelo menos um patinete.");
+  const ids = [...new Set(patineteIds.map(idOuNulo))];
+  if (!ids.length) throw falha("Selecione pelo menos um patinete.");
+  if (ids.includes(null)) throw falha("Um dos patinetes selecionados não foi encontrado.");
 
-  const patinetes = ids.map(id => db.patinetes.find(p => p.id === id));
-  if (patinetes.some(p => !p)) throw new Error("Um dos patinetes selecionados não foi encontrado.");
-  const indisponivel = patinetes.find(p => p.status !== "livre");
-  if (indisponivel) throw new Error(`O patinete ${indisponivel.codigo} não está mais disponível.`);
+  return transacao(async conexao => {
+    // Trava só estes patinetes até o COMMIT (ordem fixa evita deadlock)
+    const { rows: travados } = await conexao.query(
+      "SELECT id, codigo, status FROM patinetes WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE", [ids]);
+    if (travados.length !== ids.length) throw falha("Um dos patinetes selecionados não foi encontrado.");
+    const indisponivel = travados.find(p => p.status !== "livre");
+    if (indisponivel) throw falha(`O patinete ${indisponivel.codigo} não está mais disponível.`);
 
-  const agora = new Date().toISOString();
-  const cadastroCliente = obterOuCriarCliente(db, cliente, telefone || "");
-  let proximoId = db.locacoes.length ? Math.max(...db.locacoes.map(l => l.id)) + 1 : 1;
-  const locacoes = patinetes.map(patinete => {
-    patinete.status = "locado";
-    patinete.cliente = cliente;
-    patinete.telefone = telefone;
-    patinete.pagamento = pagamento;
-    patinete.tempo = parseInt(tempo);
-    patinete.valorBase = parseFloat(valorBase);
-    patinete.inicio = agora;
+    // Cliente identificado pelos dígitos do telefone (cria ou atualiza o nome)
+    const nome = cliente.trim();
+    const telefoneLimpo = String(telefone || "").trim();
+    const digitos = telefoneLimpo.replace(/\D/g, "") || null;
+    let clienteId;
+    if (digitos) {
+      ({ rows: [{ id: clienteId }] } = await conexao.query(
+        `INSERT INTO clientes (nome, telefone, telefone_digitos) VALUES ($1, $2, $3)
+         ON CONFLICT (telefone_digitos) DO UPDATE SET nome = EXCLUDED.nome, telefone = EXCLUDED.telefone
+         RETURNING id`, [nome, telefoneLimpo, digitos]));
+    } else {
+      const { rows: [existente] } = await conexao.query(
+        "SELECT id FROM clientes WHERE telefone_digitos IS NULL AND lower(nome) = lower($1) ORDER BY id LIMIT 1", [nome]);
+      clienteId = existente ? existente.id
+        : (await conexao.query("INSERT INTO clientes (nome) VALUES ($1) RETURNING id", [nome])).rows[0].id;
+    }
 
-    return {
-      id: proximoId++, patineteId: patinete.id, patineteCodigo: patinete.codigo,
-      pontoId: patinete.pontoId || null, pontoNome: patinete.pontoNome || "Sem ponto",
-      cliente: cliente.trim(), clienteId: cadastroCliente.id, telefone: telefone.trim(),
-      tempoMinutos: parseInt(tempo), valorBase: parseFloat(valorBase), multa: 0,
-      valorTotal: parseFloat(valorBase), pagamento, usuarioOperador, status: "ativa",
-      dataInicio: agora, dataFim: null
-    };
+    const { rows: [operador] } = await conexao.query("SELECT id, usuario FROM usuarios WHERE lower(usuario) = lower($1)", [usuarioOperador]);
+    const { rows: novas } = await conexao.query(`
+      INSERT INTO locacoes (patinete_id, patinete_codigo, cliente_id, ponto_id, ponto_nome, operador_id, operador_usuario,
+                            tempo_minutos, valor_base, pagamento)
+      SELECT p.id, p.codigo, $2, p.ponto_id, COALESCE(pt.nome, 'Sem ponto'), $3, $4, $5, $6, $7
+        FROM patinetes p LEFT JOIN pontos pt ON pt.id = p.ponto_id
+       WHERE p.id = ANY($1::int[])
+       ORDER BY p.id
+      RETURNING id`,
+      [ids, clienteId, operador ? operador.id : null, operador ? operador.usuario : String(usuarioOperador).slice(0, 40),
+       parseInt(tempo), parseFloat(valorBase), pagamento]);
+    await conexao.query("UPDATE patinetes SET status = 'locado' WHERE id = ANY($1::int[])", [ids]);
+
+    const { rows: locacoes } = await conexao.query(`${SELECT_LOCACAO} WHERE l.id = ANY($1::int[]) ORDER BY l.id`, [novas.map(n => n.id)]);
+    return { patinetes: await buscarPatinetes(conexao, ids), locacoes };
   });
-
-  db.locacoes.push(...locacoes);
-  await salvarDB(db);
-  return { patinetes, locacoes };
 }
 
-async function finalizarLocacao(patineteId, multa = 0) {
-  const db = await lerDB();
-  const pIndex = db.patinetes.findIndex(p => p.id === parseInt(patineteId));
-  if (pIndex === -1) throw new Error("Patinete não encontrado");
+async function finalizarLocacao(patineteId) {
+  return transacao(async conexao => {
+    const { rows: [patinete] } = await conexao.query(
+      "SELECT id, codigo, status, bateria FROM patinetes WHERE id = $1 FOR UPDATE", [idOuNulo(patineteId)]);
+    if (!patinete) throw falha("Patinete não encontrado");
 
-  const patinete = db.patinetes[pIndex];
-  const agora = new Date().toISOString();
+    const { rows: [ativa] } = await conexao.query(
+      `SELECT id, data_inicio AS "dataInicio", tempo_minutos AS "tempoMinutos"
+         FROM locacoes WHERE patinete_id = $1 AND status = 'ativa' FOR UPDATE`, [patinete.id]);
+    if (!ativa || patinete.status !== "locado") throw falha(`O patinete ${patinete.codigo} não possui locação ativa.`);
 
-  const locIndex = db.locacoes.findIndex(l => l.patineteId === patinete.id && l.status === "ativa");
-  let locacao = null;
+    // Multa sempre calculada no servidor, com a configuração atual
+    const { rows: [config] } = await conexao.query("SELECT multa_por_minuto FROM configuracoes WHERE id = 1");
+    const agora = new Date();
+    const multa = calcularMulta(ativa, config.multa_por_minuto, agora.getTime());
+    await conexao.query(
+      "UPDATE locacoes SET multa = $2, data_fim = GREATEST($3::timestamptz, data_inicio), status = 'finalizada' WHERE id = $1",
+      [ativa.id, multa, agora.toISOString()]);
 
-  if (locIndex !== -1) {
-    locacao = db.locacoes[locIndex];
-    locacao.multa = parseFloat(multa) || 0;
-    locacao.valorTotal = locacao.valorBase + locacao.multa;
-    locacao.dataFim = agora;
-    locacao.status = "finalizada";
-  }
+    const novaBateria = Math.max(10, (patinete.bateria || 100) - Math.floor(Math.random() * 8 + 5));
+    await conexao.query("UPDATE patinetes SET status = 'livre', bateria = $2 WHERE id = $1", [patinete.id, novaBateria]);
 
-  const novaBateria = Math.max(10, (patinete.bateria || 100) - Math.floor(Math.random() * 8 + 5));
-
-  patinete.status = "livre";
-  patinete.cliente = "";
-  patinete.telefone = "";
-  patinete.pagamento = "";
-  patinete.tempo = 0;
-  patinete.valorBase = 0;
-  patinete.inicio = null;
-  patinete.bateria = novaBateria;
-
-  await salvarDB(db);
-  return { patinete, locacao };
+    const [patineteAtualizado] = await buscarPatinetes(conexao, [patinete.id]);
+    const { rows: [locacao] } = await conexao.query(`${SELECT_LOCACAO} WHERE l.id = $1`, [ativa.id]);
+    return { patinete: patineteAtualizado, locacao };
+  });
 }
 
-// --- MANUTENÇÕES ---
+// --- MANUTENÇÕES -------------------------------------------------------------------
 async function listarManutencoes() {
-  const db = await lerDB();
-  return db.manutencoes;
+  const { rows } = await consultar(`${SELECT_MANUTENCAO} ORDER BY m.id`);
+  return rows;
 }
 
 async function registrarManutencao(patineteId, descricao, valor, usuario = "Operador") {
-  const db = await lerDB();
-  const pIndex = db.patinetes.findIndex(p => p.id === parseInt(patineteId));
-  if (pIndex === -1) throw new Error("Patinete não encontrado");
+  return transacao(async conexao => {
+    const { rows: [patinete] } = await conexao.query(
+      `SELECT p.id, p.codigo, p.status, p.ponto_id, COALESCE(pt.nome, 'Sem ponto') AS ponto_nome
+         FROM patinetes p LEFT JOIN pontos pt ON pt.id = p.ponto_id
+        WHERE p.id = $1 FOR UPDATE OF p`, [idOuNulo(patineteId)]);
+    if (!patinete) throw falha("Patinete não encontrado");
+    const { rows: [ativa] } = await conexao.query("SELECT 1 FROM locacoes WHERE patinete_id = $1 AND status = 'ativa'", [patinete.id]);
+    if (patinete.status === "locado" || ativa) {
+      throw falha(`O patinete ${patinete.codigo} está alugado. Finalize a locação antes de enviá-lo para manutenção.`);
+    }
+    if (patinete.status === "manutencao") throw falha(`O patinete ${patinete.codigo} já está em manutenção.`);
 
-  const patinete = db.patinetes[pIndex];
-  patinete.status = "manutencao";
+    const { rows: [autor] } = await conexao.query("SELECT id, usuario FROM usuarios WHERE lower(usuario) = lower($1)", [usuario]);
+    const { rows: [{ id }] } = await conexao.query(
+      `INSERT INTO manutencoes (patinete_id, patinete_codigo, ponto_id, ponto_nome, usuario_id, usuario_login, descricao, valor)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [patinete.id, patinete.codigo, patinete.ponto_id, patinete.ponto_nome, autor ? autor.id : null,
+       autor ? autor.usuario : String(usuario).slice(0, 40), descricao.trim(), Number(valor)]);
+    await conexao.query("UPDATE patinetes SET status = 'manutencao' WHERE id = $1", [patinete.id]);
 
-  const novaManutencao = {
-    id: db.manutencoes.length ? Math.max(...db.manutencoes.map(m => m.id)) + 1 : 1,
-    patineteId: patinete.id,
-    patineteCodigo: patinete.codigo,
-    pontoId: patinete.pontoId || 1,
-    pontoNome: patinete.pontoNome || "Ponto Geral",
-    descricao: descricao.trim(),
-    prioridade: "media",
-    diagnostico: "",
-    responsavelServico: "",
-    previsaoConclusao: null,
-    valor: Number(valor),
-    usuario,
-    status: "em_manutencao",
-    data: new Date().toISOString()
-  };
-
-  db.manutencoes.push(novaManutencao);
-  await salvarDB(db);
-
-  return { patinete, manutencao: novaManutencao };
+    const [patineteAtualizado] = await buscarPatinetes(conexao, [patinete.id]);
+    const { rows: [manutencao] } = await conexao.query(`${SELECT_MANUTENCAO} WHERE m.id = $1`, [id]);
+    return { patinete: patineteAtualizado, manutencao };
+  });
 }
 
 async function atualizarManutencao(id, dados = {}) {
-  const db = await lerDB();
-  const manutencao = db.manutencoes.find(item => item.id === parseInt(id));
-  if (!manutencao) throw new Error("Manutenção não encontrada.");
-  const prioridades = ["baixa", "media", "urgente"];
-  if (dados.prioridade !== undefined) {
-    if (!prioridades.includes(dados.prioridade)) throw new Error("Prioridade inválida.");
-    manutencao.prioridade = dados.prioridade;
-  }
-  if (dados.diagnostico !== undefined) manutencao.diagnostico = String(dados.diagnostico || "").trim().slice(0, 500);
-  if (dados.responsavelServico !== undefined) manutencao.responsavelServico = String(dados.responsavelServico || "").trim().slice(0, 120);
-  if (dados.previsaoConclusao !== undefined) manutencao.previsaoConclusao = dados.previsaoConclusao || null;
-  if (dados.valor !== undefined) manutencao.valor = Math.max(0, parseFloat(dados.valor) || 0);
+  return transacao(async conexao => {
+    const { rows: [atual] } = await conexao.query(
+      `SELECT id, patinete_id AS "patineteId", status FROM manutencoes WHERE id = $1 FOR UPDATE`, [idOuNulo(id)]);
+    if (!atual) throw falha("Manutenção não encontrada.");
 
-  if (dados.status === "concluida") {
-    manutencao.status = "concluida";
-    manutencao.dataLiberacao = new Date().toISOString();
-    const patinete = db.patinetes.find(item => item.id === manutencao.patineteId);
-    if (patinete) {
-      patinete.status = "livre";
-      patinete.bateria = 100;
+    const colunas = [];
+    const valores = [atual.id];
+    const definir = (coluna, valor) => {
+      valores.push(valor);
+      colunas.push(`${coluna} = $${valores.length}`);
+    };
+
+    if (dados.prioridade !== undefined) {
+      if (!["baixa", "media", "urgente"].includes(dados.prioridade)) throw falha("Prioridade inválida.");
+      definir("prioridade", dados.prioridade);
     }
-  }
-  await salvarDB(db);
-  return manutencao;
+    if (dados.diagnostico !== undefined) definir("diagnostico", String(dados.diagnostico || "").trim().slice(0, 500));
+    if (dados.responsavelServico !== undefined) definir("responsavel_servico", String(dados.responsavelServico || "").trim().slice(0, 120));
+    if (dados.previsaoConclusao !== undefined) {
+      const previsao = dados.previsaoConclusao ? String(dados.previsaoConclusao) : null;
+      if (previsao && Number.isNaN(Date.parse(previsao))) throw falha("Data de previsão inválida.");
+      // O campo datetime-local do front ("2026-11-12T10:00") não tem fuso:
+      // é interpretado no horário da operação. Datas com fuso/Z são usadas como vieram.
+      valores.push(previsao, FUSO_HORARIO);
+      const v = `$${valores.length - 1}`;
+      const fuso = `$${valores.length}`;
+      colunas.push(`previsao_conclusao = CASE
+        WHEN ${v}::text IS NULL THEN NULL
+        WHEN ${v}::text ~ '(Z|[+-][0-9]{2}:?[0-9]{2})$' THEN ${v}::timestamptz
+        ELSE (${v}::timestamp AT TIME ZONE ${fuso}::text) END`);
+    }
+    if (dados.valor !== undefined) {
+      const valor = Math.max(0, parseFloat(dados.valor) || 0);
+      if (valor > 100000) throw falha("Valor da manutenção inválido. Informe um valor entre R$ 0,00 e R$ 100.000,00.");
+      definir("valor", valor);
+    }
+
+    const concluir = dados.status === "concluida" && atual.status !== "concluida";
+    if (concluir) colunas.push("status = 'concluida'", "data_liberacao = now()");
+    if (colunas.length) await conexao.query(`UPDATE manutencoes SET ${colunas.join(", ")} WHERE id = $1`, valores);
+
+    if (concluir && atual.patineteId) {
+      // Libera o patinete só se ele estiver em manutenção e não houver outra manutenção aberta
+      await conexao.query(`
+        UPDATE patinetes p SET status = 'livre', bateria = 100
+         WHERE p.id = $1 AND p.status = 'manutencao'
+           AND NOT EXISTS (SELECT 1 FROM manutencoes m WHERE m.patinete_id = p.id AND m.status = 'em_manutencao')`,
+        [atual.patineteId]);
+    }
+    const { rows: [manutencao] } = await conexao.query(`${SELECT_MANUTENCAO} WHERE m.id = $1`, [atual.id]);
+    return manutencao;
+  });
 }
 
 async function liberarManutencao(patineteId) {
-  const db = await lerDB();
-  const pIndex = db.patinetes.findIndex(p => p.id === parseInt(patineteId));
-  if (pIndex === -1) throw new Error("Patinete não encontrado");
+  return transacao(async conexao => {
+    const { rows: [patinete] } = await conexao.query(
+      "SELECT id, codigo, status FROM patinetes WHERE id = $1 FOR UPDATE", [idOuNulo(patineteId)]);
+    if (!patinete) throw falha("Patinete não encontrado");
+    if (patinete.status !== "manutencao") throw falha(`O patinete ${patinete.codigo} não está em manutenção.`);
 
-  const patinete = db.patinetes[pIndex];
-  patinete.status = "livre";
-  patinete.bateria = 100;
-
-  const manutencao = [...db.manutencoes]
-    .reverse()
-    .find(item => item.patineteId === patinete.id && !item.dataLiberacao);
-  if (manutencao) {
-    manutencao.status = "concluida";
-    manutencao.dataLiberacao = new Date().toISOString();
-  }
-
-  await salvarDB(db);
-  return patinete;
-}
-
-// --- CONFIGURAÇÕES & ADMIN ---
-async function obterConfig() {
-  const db = await lerDB();
-  return db.configuracoes;
-}
-
-async function obterPainelOperacional() {
-  const db = await lerDB();
-  const config = { ...CONFIG_PADRAO, ...(db.configuracoes || {}) };
-  const agora = Date.now();
-  const limiteManutencao = agora - Number(config.alertaManutencaoDias || 3) * 86400000;
-  const manutencoesAbertas = db.manutencoes.filter(item => item.status === "em_manutencao");
-  const locacoesAtrasadas = db.locacoes.filter(loc => loc.status === "ativa" && new Date(loc.dataInicio).getTime() + Number(loc.tempoMinutos || 0) * 60000 < agora);
-  const operadores = db.usuarios.filter(user => (user.nivel || "operador") === "operador");
-  const pendentes = db.usuarios.filter(user => (user.status || "aprovado") === "pendente");
-  const patinetesSemPonto = db.patinetes.filter(pat => !pat.pontoId);
-
-  const alertas = {
-    manutencoesAntigas: manutencoesAbertas.filter(item => new Date(item.data).getTime() < limiteManutencao),
-    locacoesAtrasadas,
-    operadoresSemPonto: operadores.filter(user => !user.pontoId && !user.bloqueado),
-    usuariosPendentes: pendentes,
-    patinetesSemPonto
-  };
-
-  const dadosOperadores = operadores.map(user => {
-    const nomes = new Set([user.usuario, user.nome].filter(Boolean).map(valor => String(valor).toLowerCase()));
-    const locacoes = db.locacoes.filter(loc => nomes.has(String(loc.usuarioOperador || "").toLowerCase()));
-    const manutencoes = manutencoesAbertas.filter(item => nomes.has(String(item.usuario || "").toLowerCase()));
-    const ultimaAtividade = user.ultimaAtividade || user.ultimoLogin || null;
-    return {
-      id: user.id, nome: user.nome, usuario: user.usuario, status: user.status,
-      bloqueado: Boolean(user.bloqueado), pontoId: user.pontoId || null,
-      pontoNome: db.pontos.find(ponto => ponto.id === user.pontoId)?.nome || "Sem ponto",
-      ultimoLogin: user.ultimoLogin || null, ultimaAtividade,
-      online: Boolean(ultimaAtividade && agora - new Date(ultimaAtividade).getTime() <= 15 * 60000),
-      totalLocacoes: locacoes.length, manutencoesAbertas: manutencoes.length
-    };
+    await conexao.query("UPDATE patinetes SET status = 'livre', bateria = 100 WHERE id = $1", [patinete.id]);
+    await conexao.query(`
+      UPDATE manutencoes SET status = 'concluida', data_liberacao = now()
+       WHERE id = (SELECT id FROM manutencoes WHERE patinete_id = $1 AND data_liberacao IS NULL ORDER BY id DESC LIMIT 1)`,
+      [patinete.id]);
+    const [atualizado] = await buscarPatinetes(conexao, [patinete.id]);
+    return atualizado;
   });
+}
 
-  const agrupar = (lista, chave, valor = () => 1) => Object.values(lista.reduce((acc, item) => {
-    const nome = chave(item) || "Não informado";
-    if (!acc[nome]) acc[nome] = { nome, total: 0 };
-    acc[nome].total += Number(valor(item) || 0);
-    return acc;
-  }, {})).sort((a, b) => b.total - a.total);
-
+// --- CONFIGURAÇÕES & ADMIN -------------------------------------------------------
+async function lerConfig(executor) {
+  const { rows: [config] } = await executor.query(`
+    SELECT nome_admin AS "nomeAdmin", cargo_admin AS "cargoAdmin", nome_empresa AS "nomeEmpresa",
+           multa_por_minuto AS "multaPorMinuto", limite_patinetes_locacao AS "limitePatinetesLocacao",
+           alerta_manutencao_dias AS "alertaManutencaoDias"
+      FROM configuracoes WHERE id = 1`);
+  const { rows: precos } = await executor.query("SELECT tempo_minutos, valor FROM precos ORDER BY tempo_minutos");
   return {
-    alertas,
-    operadores: dadosOperadores,
-    desempenho: {
-      operadoresPorLocacoes: [...dadosOperadores].sort((a, b) => b.totalLocacoes - a.totalLocacoes),
-      faturamentoPorPonto: agrupar(db.locacoes, loc => loc.pontoNome || "Sem ponto", loc => loc.valorTotal),
-      patinetesMaisUtilizados: agrupar(db.locacoes, loc => loc.patineteCodigo || `PAT${loc.patineteId}`),
-      manutencoesPorPonto: agrupar(db.manutencoes, item => item.pontoNome || "Sem ponto"),
-      horariosMaiorMovimento: agrupar(db.locacoes, loc => `${String(new Date(loc.dataInicio).getHours()).padStart(2, "0")}:00`).slice(0, 8)
-    }
+    ...config,
+    precos: Object.fromEntries(precos.map(p => [p.tempo_minutos, p.valor])),
+    temposDisponiveis: precos.map(p => p.tempo_minutos)
   };
+}
+
+async function obterConfig() {
+  return transacao(lerConfig, { somenteLeitura: true });
 }
 
 async function salvarConfig(config) {
-  const db = await lerDB();
-  db.configuracoes = { ...db.configuracoes, ...config };
-  await salvarDB(db);
-  return db.configuracoes;
+  return transacao(async conexao => {
+    const colunas = { nomeEmpresa: "nome_empresa", multaPorMinuto: "multa_por_minuto", limitePatinetesLocacao: "limite_patinetes_locacao" };
+    const definidos = Object.keys(colunas).filter(chave => config[chave] !== undefined);
+    if (definidos.length) {
+      await conexao.query(
+        `UPDATE configuracoes SET ${definidos.map((chave, i) => `${colunas[chave]} = $${i + 1}`).join(", ")} WHERE id = 1`,
+        definidos.map(chave => config[chave]));
+    }
+    if (Array.isArray(config.temposDisponiveis)) {
+      await conexao.query("DELETE FROM precos");
+      for (const tempo of config.temposDisponiveis) {
+        await conexao.query("INSERT INTO precos (tempo_minutos, valor) VALUES ($1, $2)", [tempo, config.precos[tempo]]);
+      }
+    }
+    return lerConfig(conexao);
+  });
 }
 
-// --- CONSOLIDADOR DE RELATÓRIOS ---
-async function obterResumoGeral(mesFiltro = null) {
-  const db = await lerDB();
-  const agora = new Date();
-
-  const mesAtualStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
-  const mesAlvo = mesFiltro === "todos"
-    ? null
-    : (!mesFiltro || mesFiltro === "atual" ? mesAtualStr : mesFiltro);
-
-  const mesAnteriorData = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
-  const mesAnteriorStr = `${mesAnteriorData.getFullYear()}-${String(mesAnteriorData.getMonth() + 1).padStart(2, "0")}`;
-  const somar = (lista, campo) => lista.reduce((total, item) => total + (parseFloat(item[campo]) || 0), 0);
-  const calcularVariacao = (atual, anterior) => {
-    if (!anterior) return atual ? null : 0;
-    return ((atual - anterior) / Math.abs(anterior)) * 100;
-  };
-  const consolidarMes = mes => {
-    const locacoes = db.locacoes.filter(l => (l.dataInicio || "").slice(0, 7) === mes);
-    const manutencoes = db.manutencoes.filter(m => (m.data || "").slice(0, 7) === mes);
-    const faturamento = somar(locacoes, "valorTotal");
-    const manutencao = somar(manutencoes, "valor");
-    return { locacoes: locacoes.length, faturamento, manutencao, lucro: faturamento - manutencao };
-  };
-
-  const totalPatinetes = db.patinetes.length;
-  const patinetesLivres = db.patinetes.filter(p => p.status === "livre").length;
-  const patinetesLocados = db.patinetes.filter(p => p.status === "locado" || p.status === "atrasado").length;
-  const patinetesManutencao = db.patinetes.filter(p => p.status === "manutencao").length;
-
-  const locacoesFiltradas = db.locacoes.filter(loc => {
-    if (!mesAlvo) return true;
-    const mesLoc = (loc.dataInicio || "").slice(0, 7);
-    return mesLoc === mesAlvo;
-  });
-
-  const manutencoesFiltradas = db.manutencoes.filter(m => {
-    if (!mesAlvo) return true;
-    const mesMan = (m.data || "").slice(0, 7);
-    return mesMan === mesAlvo;
-  });
-
-  const totalLocacoes = locacoesFiltradas.length;
-  const faturamentoTotal = locacoesFiltradas.reduce((acc, l) => acc + (parseFloat(l.valorTotal) || 0), 0);
-  const gastoManutencaoTotal = manutencoesFiltradas.reduce((acc, m) => acc + (parseFloat(m.valor) || 0), 0);
-  const lucroTotal = faturamentoTotal - gastoManutencaoTotal;
-
-  const locacoesRecebidas = locacoesFiltradas.filter(l => l.status === "finalizada");
-  const locacoesCanceladas = locacoesFiltradas.filter(l => l.status === "cancelada");
-  const locacoesPendentes = locacoesFiltradas.filter(l => !["finalizada", "cancelada"].includes(l.status));
-  const financeiroPagamento = {
-    recebido: somar(locacoesRecebidas, "valorTotal"),
-    pendente: somar(locacoesPendentes, "valorTotal"),
-    multas: somar(locacoesFiltradas, "multa"),
-    cancelado: somar(locacoesCanceladas, "valorTotal"),
-    quantidadePendentes: locacoesPendentes.length,
-    quantidadeCanceladas: locacoesCanceladas.length
-  };
-
-  const atualComparacao = consolidarMes(mesAtualStr);
-  const anteriorComparacao = consolidarMes(mesAnteriorStr);
-  const comparacao = {
-    mesAtual: mesAtualStr,
-    mesAnterior: mesAnteriorStr,
-    atual: atualComparacao,
-    anterior: anteriorComparacao,
-    variacoes: {
-      locacoes: calcularVariacao(atualComparacao.locacoes, anteriorComparacao.locacoes),
-      faturamento: calcularVariacao(atualComparacao.faturamento, anteriorComparacao.faturamento),
-      manutencao: calcularVariacao(atualComparacao.manutencao, anteriorComparacao.manutencao),
-      lucro: calcularVariacao(atualComparacao.lucro, anteriorComparacao.lucro)
-    }
-  };
-
-  const faturamentoHistorico = db.locacoes.reduce((acc, l) => acc + (parseFloat(l.valorTotal) || 0), 0);
-  const locacoesHistorico = db.locacoes.length;
-
-  const porDia = {};
-  locacoesFiltradas.forEach(loc => {
-    const dataStr = (loc.dataInicio || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
-    if (!porDia[dataStr]) porDia[dataStr] = { faturamento: 0, manutencao: 0, locacoes: 0 };
-    porDia[dataStr].faturamento += parseFloat(loc.valorTotal) || 0;
-    porDia[dataStr].locacoes += 1;
-  });
-
-  manutencoesFiltradas.forEach(m => {
-    const dataStr = (m.data || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
-    if (!porDia[dataStr]) porDia[dataStr] = { faturamento: 0, manutencao: 0, locacoes: 0 };
-    porDia[dataStr].manutencao += parseFloat(m.valor) || 0;
-  });
-
-  const porPagamento = {};
-  locacoesFiltradas.forEach(loc => {
-    const forma = loc.pagamento || "Outro";
-    porPagamento[forma] = (porPagamento[forma] || 0) + (parseFloat(loc.valorTotal) || 0);
-  });
-
-  const usoPorPatinete = db.patinetes.map(pat => {
-    const locs = locacoesFiltradas.filter(l => l.patineteId === pat.id);
-    const mans = manutencoesFiltradas.filter(m => m.patineteId === pat.id);
-    const fat = locs.reduce((acc, l) => acc + (parseFloat(l.valorTotal) || 0), 0);
-    const manGasto = mans.reduce((acc, m) => acc + (parseFloat(m.valor) || 0), 0);
+async function obterPainelOperacional() {
+  return transacao(async c => {
+    const lista = async (sql, params = []) => (await c.query(sql, params)).rows;
+    const manutencoesAntigas = await lista(`${SELECT_MANUTENCAO}
+      WHERE m.status = 'em_manutencao'
+        AND m.data < now() - make_interval(days => (SELECT alerta_manutencao_dias FROM configuracoes WHERE id = 1))
+      ORDER BY m.id`);
+    const locacoesAtrasadas = await lista(`${SELECT_LOCACAO}
+      WHERE l.status = 'ativa' AND l.data_inicio + make_interval(mins => l.tempo_minutos) < now()
+      ORDER BY l.id`);
+    const usuarios = await lista(`SELECT ${COLUNAS_USUARIO} FROM usuarios ORDER BY id`);
+    const patinetesSemPonto = await lista(`${SELECT_PATINETE} WHERE p.ponto_id IS NULL ORDER BY p.id`);
+    const operadores = await lista(`
+      SELECT u.id, u.nome, u.usuario, u.status, u.bloqueado, u.ponto_id AS "pontoId",
+             COALESCE(pt.nome, 'Sem ponto') AS "pontoNome", u.ultimo_login AS "ultimoLogin",
+             COALESCE(u.ultima_atividade, u.ultimo_login) AS "ultimaAtividade",
+             COALESCE(COALESCE(u.ultima_atividade, u.ultimo_login) >= now() - interval '15 minutes', false) AS online,
+             (SELECT COUNT(*) FROM locacoes l
+               WHERE l.operador_id = u.id OR lower(l.operador_usuario) IN (lower(u.usuario), lower(u.nome))) AS "totalLocacoes",
+             (SELECT COUNT(*) FROM manutencoes m
+               WHERE m.status = 'em_manutencao'
+                 AND (m.usuario_id = u.id OR lower(m.usuario_login) IN (lower(u.usuario), lower(u.nome)))) AS "manutencoesAbertas"
+        FROM usuarios u
+        LEFT JOIN pontos pt ON pt.id = u.ponto_id
+       WHERE u.nivel = 'operador'
+       ORDER BY u.id`);
 
     return {
-      id: pat.id,
-      codigo: pat.codigo,
-      modelo: pat.modelo,
-      bateria: pat.bateria,
-      status: pat.status,
-      pontoNome: pat.pontoNome || "Sem ponto",
-      totalLocacoes: locs.length,
-      faturamentoGerado: fat,
-      gastoManutencao: manGasto,
-      lucroLiquido: fat - manGasto
+      alertas: {
+        manutencoesAntigas,
+        locacoesAtrasadas,
+        operadoresSemPonto: usuarios.filter(u => u.nivel === "operador" && !u.pontoId && !u.bloqueado),
+        usuariosPendentes: usuarios.filter(u => u.status === "pendente"),
+        patinetesSemPonto
+      },
+      operadores,
+      desempenho: {
+        operadoresPorLocacoes: [...operadores].sort((a, b) => b.totalLocacoes - a.totalLocacoes),
+        faturamentoPorPonto: await lista(
+          "SELECT ponto_nome AS nome, SUM(valor_total) AS total FROM locacoes GROUP BY ponto_nome ORDER BY total DESC, nome"),
+        patinetesMaisUtilizados: await lista(
+          "SELECT patinete_codigo AS nome, COUNT(*) AS total FROM locacoes GROUP BY patinete_codigo ORDER BY total DESC, nome"),
+        manutencoesPorPonto: await lista(
+          "SELECT ponto_nome AS nome, COUNT(*) AS total FROM manutencoes GROUP BY ponto_nome ORDER BY total DESC, nome"),
+        horariosMaiorMovimento: await lista(`
+          SELECT to_char(data_inicio AT TIME ZONE $1, 'HH24') || ':00' AS nome, COUNT(*) AS total
+            FROM locacoes GROUP BY 1 ORDER BY total DESC, nome LIMIT 8`, [FUSO_HORARIO])
+      }
     };
-  });
+  }, { somenteLeitura: true });
+}
 
-  const faturamentoPorPonto = [];
-  const nomesPontos = new Set([
-    ...locacoesFiltradas.map(l => l.pontoNome || "Sem ponto"),
-    ...manutencoesFiltradas.map(m => m.pontoNome || "Sem ponto")
-  ]);
-  nomesPontos.forEach(nome => {
-    const locs = locacoesFiltradas.filter(l => (l.pontoNome || "Sem ponto") === nome);
-    const mans = manutencoesFiltradas.filter(m => (m.pontoNome || "Sem ponto") === nome);
-    const faturamento = somar(locs, "valorTotal");
-    const despesas = somar(mans, "valor");
-    faturamentoPorPonto.push({ pontoNome: nome, locacoes: locs.length, faturamento, despesas, lucro: faturamento - despesas });
-  });
-  faturamentoPorPonto.sort((a, b) => b.faturamento - a.faturamento);
+// --- CONSOLIDADOR DE RELATÓRIOS ------------------------------------------------
+async function obterResumoGeral(mesFiltro = null) {
+  const mesAtualStr = mesLocal(new Date());
+  const mesAlvo = mesFiltro === "todos" ? null : (!mesFiltro || mesFiltro === "atual" ? mesAtualStr : String(mesFiltro));
+  const mesAnteriorStr = mesAnteriorDe(mesAtualStr);
+  // $1 = mês alvo (NULL = histórico completo), $2 = fuso da operação
+  const filtroLoc = "($1::text IS NULL OR to_char(l.data_inicio AT TIME ZONE $2, 'YYYY-MM') = $1)";
+  const filtroMan = "($1::text IS NULL OR to_char(m.data AT TIME ZONE $2, 'YYYY-MM') = $1)";
+  const parametros = [mesAlvo, FUSO_HORARIO];
 
-  const desempenhoPorOperador = [];
-  const operadores = new Set([
-    ...locacoesFiltradas.map(l => l.usuarioOperador || "Não informado"),
-    ...manutencoesFiltradas.map(m => m.usuario || "Não informado")
-  ]);
-  operadores.forEach(nome => {
-    const locs = locacoesFiltradas.filter(l => (l.usuarioOperador || "Não informado") === nome);
-    const mansAbertas = manutencoesFiltradas.filter(m => (m.usuario || "Não informado") === nome && m.status !== "concluida");
-    desempenhoPorOperador.push({
-      operador: nome,
-      iniciadas: locs.length,
-      finalizadas: locs.filter(l => l.status === "finalizada").length,
-      manutencoesAbertas: mansAbertas.length,
-      faturamento: somar(locs, "valorTotal")
-    });
-  });
-  desempenhoPorOperador.sort((a, b) => b.faturamento - a.faturamento);
+  // REPEATABLE READ: todos os números do relatório vêm do mesmo instante do banco
+  return transacao(async c => {
+    const lista = async (sql, params = parametros) => (await c.query(sql, params)).rows;
 
-  return {
-    periodo: mesAlvo || "Historico Completo",
-    mesAtual: mesAtualStr,
-    frota: {
-      total: totalPatinetes,
-      livres: patinetesLivres,
-      locados: patinetesLocados,
-      manutencao: patinetesManutencao
-    },
-    financeiro: {
-      totalLocacoes,
-      faturamentoTotal,
-      gastoManutencaoTotal,
-      lucroTotal,
-      faturamentoHistorico,
-      locacoesHistorico,
-      pagamentos: financeiroPagamento
-    },
-    comparacao,
-    porDia,
-    porPagamento,
-    faturamentoPorPonto,
-    desempenhoPorOperador,
-    usoPorPatinete
-  };
+    const [frota] = await lista(`
+      SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'livre') AS livres,
+             COUNT(*) FILTER (WHERE status = 'locado') AS locados,
+             COUNT(*) FILTER (WHERE status = 'manutencao') AS manutencao
+        FROM patinetes`, []);
+    const [fin] = await lista(`
+      SELECT COUNT(*) AS "totalLocacoes", COALESCE(SUM(valor_total), 0) AS faturamento,
+             COALESCE(SUM(valor_total) FILTER (WHERE status = 'finalizada'), 0) AS recebido,
+             COALESCE(SUM(valor_total) FILTER (WHERE status NOT IN ('finalizada', 'cancelada')), 0) AS pendente,
+             COALESCE(SUM(multa), 0) AS multas,
+             COALESCE(SUM(valor_total) FILTER (WHERE status = 'cancelada'), 0) AS cancelado,
+             COUNT(*) FILTER (WHERE status NOT IN ('finalizada', 'cancelada')) AS "quantidadePendentes",
+             COUNT(*) FILTER (WHERE status = 'cancelada') AS "quantidadeCanceladas"
+        FROM locacoes l WHERE ${filtroLoc}`);
+    const [{ total: gastoManutencaoTotal }] = await lista(`SELECT COALESCE(SUM(valor), 0) AS total FROM manutencoes m WHERE ${filtroMan}`);
+    const [historico] = await lista("SELECT COALESCE(SUM(valor_total), 0) AS faturamento, COUNT(*) AS locacoes FROM locacoes", []);
+
+    const meses = await lista(`
+      SELECT mes, SUM(locacoes) AS locacoes, SUM(faturamento) AS faturamento, SUM(manutencao) AS manutencao FROM (
+        SELECT to_char(data_inicio AT TIME ZONE $2, 'YYYY-MM') AS mes, COUNT(*) AS locacoes, SUM(valor_total) AS faturamento, 0 AS manutencao
+          FROM locacoes GROUP BY 1
+        UNION ALL
+        SELECT to_char(data AT TIME ZONE $2, 'YYYY-MM'), 0, 0, SUM(valor) FROM manutencoes GROUP BY 1
+      ) t WHERE mes = ANY($1::text[]) GROUP BY mes`, [[mesAtualStr, mesAnteriorStr], FUSO_HORARIO]);
+
+    const dias = await lista(`
+      SELECT dia, SUM(faturamento) AS faturamento, SUM(manutencao) AS manutencao, SUM(locacoes) AS locacoes FROM (
+        SELECT to_char(l.data_inicio AT TIME ZONE $2, 'YYYY-MM-DD') AS dia, SUM(l.valor_total) AS faturamento, 0 AS manutencao, COUNT(*) AS locacoes
+          FROM locacoes l WHERE ${filtroLoc} GROUP BY 1
+        UNION ALL
+        SELECT to_char(m.data AT TIME ZONE $2, 'YYYY-MM-DD'), 0, SUM(m.valor), 0
+          FROM manutencoes m WHERE ${filtroMan} GROUP BY 1
+      ) t GROUP BY dia ORDER BY dia`);
+
+    const pagamentos = await lista(`
+      SELECT pagamento, SUM(valor_total) AS total FROM locacoes l WHERE ${filtroLoc} GROUP BY pagamento ORDER BY pagamento`);
+
+    const usoPorPatinete = await lista(`
+      SELECT p.id, p.codigo, p.modelo, p.bateria, p.status, COALESCE(pt.nome, 'Sem ponto') AS "pontoNome",
+             COALESCE(lc.total, 0) AS "totalLocacoes", COALESCE(lc.faturamento, 0) AS "faturamentoGerado",
+             COALESCE(mc.gasto, 0) AS "gastoManutencao", COALESCE(lc.faturamento, 0) - COALESCE(mc.gasto, 0) AS "lucroLiquido"
+        FROM patinetes p
+        LEFT JOIN pontos pt ON pt.id = p.ponto_id
+        LEFT JOIN (SELECT patinete_id, COUNT(*) AS total, SUM(valor_total) AS faturamento
+                     FROM locacoes l WHERE ${filtroLoc} GROUP BY patinete_id) lc ON lc.patinete_id = p.id
+        LEFT JOIN (SELECT patinete_id, SUM(valor) AS gasto
+                     FROM manutencoes m WHERE ${filtroMan} GROUP BY patinete_id) mc ON mc.patinete_id = p.id
+       ORDER BY p.id`);
+
+    const faturamentoPorPonto = await lista(`
+      SELECT COALESCE(lc.ponto_nome, mc.ponto_nome) AS "pontoNome", COALESCE(lc.locacoes, 0) AS locacoes,
+             COALESCE(lc.faturamento, 0) AS faturamento, COALESCE(mc.despesas, 0) AS despesas,
+             COALESCE(lc.faturamento, 0) - COALESCE(mc.despesas, 0) AS lucro
+        FROM (SELECT ponto_nome, COUNT(*) AS locacoes, SUM(valor_total) AS faturamento
+                FROM locacoes l WHERE ${filtroLoc} GROUP BY ponto_nome) lc
+        FULL OUTER JOIN (SELECT ponto_nome, SUM(valor) AS despesas
+                FROM manutencoes m WHERE ${filtroMan} GROUP BY ponto_nome) mc ON mc.ponto_nome = lc.ponto_nome
+       ORDER BY faturamento DESC, "pontoNome"`);
+
+    const desempenhoPorOperador = await lista(`
+      SELECT COALESCE(lc.operador, mc.operador) AS operador, COALESCE(lc.iniciadas, 0) AS iniciadas,
+             COALESCE(lc.finalizadas, 0) AS finalizadas, COALESCE(mc.abertas, 0) AS "manutencoesAbertas",
+             COALESCE(lc.faturamento, 0) AS faturamento
+        FROM (SELECT operador_usuario AS operador, COUNT(*) AS iniciadas,
+                     COUNT(*) FILTER (WHERE status = 'finalizada') AS finalizadas, SUM(valor_total) AS faturamento
+                FROM locacoes l WHERE ${filtroLoc} GROUP BY operador_usuario) lc
+        FULL OUTER JOIN (SELECT usuario_login AS operador, COUNT(*) FILTER (WHERE status <> 'concluida') AS abertas
+                FROM manutencoes m WHERE ${filtroMan} GROUP BY usuario_login) mc ON mc.operador = lc.operador
+       ORDER BY faturamento DESC, operador`);
+
+    const consolidarMes = chave => {
+      const linha = meses.find(item => item.mes === chave) || { locacoes: 0, faturamento: 0, manutencao: 0 };
+      return { locacoes: linha.locacoes, faturamento: linha.faturamento, manutencao: linha.manutencao, lucro: linha.faturamento - linha.manutencao };
+    };
+    const calcularVariacao = (atual, anterior) => (!anterior ? (atual ? null : 0) : ((atual - anterior) / Math.abs(anterior)) * 100);
+    const atual = consolidarMes(mesAtualStr);
+    const anterior = consolidarMes(mesAnteriorStr);
+
+    return {
+      periodo: mesAlvo || "Historico Completo",
+      mesAtual: mesAtualStr,
+      frota,
+      financeiro: {
+        totalLocacoes: fin.totalLocacoes,
+        faturamentoTotal: fin.faturamento,
+        gastoManutencaoTotal,
+        lucroTotal: fin.faturamento - gastoManutencaoTotal,
+        faturamentoHistorico: historico.faturamento,
+        locacoesHistorico: historico.locacoes,
+        pagamentos: {
+          recebido: fin.recebido,
+          pendente: fin.pendente,
+          multas: fin.multas,
+          cancelado: fin.cancelado,
+          quantidadePendentes: fin.quantidadePendentes,
+          quantidadeCanceladas: fin.quantidadeCanceladas
+        }
+      },
+      comparacao: {
+        mesAtual: mesAtualStr,
+        mesAnterior: mesAnteriorStr,
+        atual,
+        anterior,
+        variacoes: {
+          locacoes: calcularVariacao(atual.locacoes, anterior.locacoes),
+          faturamento: calcularVariacao(atual.faturamento, anterior.faturamento),
+          manutencao: calcularVariacao(atual.manutencao, anterior.manutencao),
+          lucro: calcularVariacao(atual.lucro, anterior.lucro)
+        }
+      },
+      porDia: Object.fromEntries(dias.map(d => [d.dia, { faturamento: d.faturamento, manutencao: d.manutencao, locacoes: d.locacoes }])),
+      porPagamento: Object.fromEntries(pagamentos.map(item => [item.pagamento, item.total])),
+      faturamentoPorPonto,
+      desempenhoPorOperador,
+      usoPorPatinete
+    };
+  }, { somenteLeitura: true });
 }
 
 module.exports = {
+  BancoIndisponivelError,
+  mesLocal,
+  diaLocal,
+  calcularMulta,
   hashSenha,
   verificarSenha,
   listarUsuarios,
+  buscarUsuarioPorLogin,
   cadastrarUsuario,
   autenticarUsuario,
   obterUsuarioSessao,
