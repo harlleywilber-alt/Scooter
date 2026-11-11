@@ -17,7 +17,7 @@ function mostrarToastAdmin(msg) {
 }
 
 // Carregar estatísticas e perfil do servidor
-async function carregarDadosAdmin() {
+async function carregarDadosAdmin({ automatico = false } = {}) {
   try {
     const dados = await api.getAdminStats();
     const { perfil, stats } = dados;
@@ -44,7 +44,7 @@ async function carregarDadosAdmin() {
     }
   } catch (error) {
     console.error("Erro ao carregar dados do admin:", error);
-    mostrarToastAdmin("Erro ao conectar ao servidor administrativo");
+    if (!automatico) mostrarToastAdmin("Erro ao conectar ao servidor administrativo");
   }
 }
 
@@ -233,11 +233,16 @@ async function excluirUsuario(id) {
   }
 }
 
-async function carregarHistoricoUsuarios() {
+let assinaturaHistorico = null;
+
+async function carregarHistoricoUsuarios({ automatico = false } = {}) {
   const container = document.getElementById("historicoUsuarios");
   if (!container) return;
   try {
     const historico = await api.getHistoricoUsuarios();
+    const assinatura = JSON.stringify(historico);
+    if (automatico && assinatura === assinaturaHistorico) return;
+    assinaturaHistorico = assinatura;
     if (!historico.length) {
       container.innerHTML = '<p class="usuarios-vazio">Nenhuma atividade registrada.</p>';
       return;
@@ -247,17 +252,34 @@ async function carregarHistoricoUsuarios() {
       <span>${formatarDataHora(item.data)} · por ${escaparHtml(item.responsavel || "sistema")}${item.detalhes ? ` · ${escaparHtml(item.detalhes)}` : ""}</span>
     </article>`).join("");
   } catch (error) {
+    if (automatico) return;
     container.innerHTML = '<p class="usuarios-vazio">Não foi possível carregar o histórico.</p>';
   }
 }
 
-async function carregarManutencoesAdmin() {
+let assinaturaManutencoes = null;
+let manutencoesAbertasConhecidas = null;
+
+async function carregarManutencoesAdmin({ automatico = false } = {}) {
   const container = document.getElementById("listaManutencoesAdmin");
   const contador = document.getElementById("contadorManutencoes");
   if (!container) return;
 
   try {
-    manutencoesAdmin = await api.getManutencoes();
+    const lista = await api.getManutencoes();
+    const assinatura = JSON.stringify(lista);
+    if (automatico && assinatura === assinaturaManutencoes) return;
+    assinaturaManutencoes = assinatura;
+    manutencoesAdmin = lista;
+
+    // Avisa quando um operador envia um patinete para manutenção
+    const idsAbertas = manutencoesAdmin.filter(item => item.status === "em_manutencao").map(item => item.id);
+    if (manutencoesAbertasConhecidas) {
+      const novas = manutencoesAdmin.filter(item => idsAbertas.includes(item.id) && !manutencoesAbertasConhecidas.has(item.id));
+      if (novas.length === 1) mostrarToastAdmin(`Nova manutenção: ${novas[0].patineteCodigo} (${novas[0].descricao})`);
+      if (novas.length > 1) mostrarToastAdmin(`${novas.length} novas manutenções registradas`);
+    }
+    manutencoesAbertasConhecidas = new Set(idsAbertas);
     const ordenadas = [...manutencoesAdmin].sort((a, b) => new Date(b.data) - new Date(a.data));
     const abertas = ordenadas.filter(item => item.status === "em_manutencao").length;
     if (contador) contador.textContent = `${abertas} ${abertas === 1 ? "em manutenção" : "em manutenção"}`;
@@ -293,6 +315,7 @@ async function carregarManutencoesAdmin() {
       </article>`;
     }).join("");
   } catch (error) {
+    if (automatico) return;
     container.innerHTML = '<p class="usuarios-vazio">Não foi possível carregar as manutenções.</p>';
   }
 }
@@ -434,32 +457,23 @@ carregarManutencoesAdmin();
 carregarCentralAdmin();
 carregarConfiguracoesSistema();
 
-// ATUALIZAÇÃO AUTOMÁTICA
-// Novos cadastros, alertas e operadores online aparecem sem recarregar a página.
-// Não atualiza com a aba escondida, com uma janela (modal) aberta ou enquanto o
-// admin está usando um campo da lista (ex.: escolhendo o ponto de um operador).
-const INTERVALO_ATUALIZACAO_MS = 15000;
-let atualizandoAdmin = false;
-
+// ATUALIZAÇÃO AUTOMÁTICA (a cada 15 s)
+// Novos cadastros, manutenções, histórico, alertas, operadores online e os
+// números da visão geral aparecem sem recarregar a página. Cada parte só é
+// redesenhada se mudou. Não atualiza com a aba escondida, com uma janela
+// (modal) aberta ou enquanto o admin usa um campo da lista (ex.: escolhendo o
+// ponto de um operador). As configurações ficam de fora para não apagar o que
+// o admin estiver digitando.
 function adminEstaInteragindo() {
   const modal = document.getElementById("modalAdmin");
   if (modal && modal.style.display === "flex") return true;
-  const ativo = document.activeElement;
-  return Boolean(ativo && ativo.closest("#listaUsuarios, #listaOperadoresAdmin") && ["SELECT", "INPUT", "TEXTAREA"].includes(ativo.tagName));
+  return campoEmUsoDentroDe("#listaUsuarios, #listaOperadoresAdmin, #listaManutencoesAdmin");
 }
 
-async function atualizarPainelAutomaticamente() {
-  if (document.hidden || atualizandoAdmin || adminEstaInteragindo()) return;
-  atualizandoAdmin = true;
-  try {
-    await Promise.all([carregarUsuarios({ automatico: true }), carregarCentralAdmin({ automatico: true })]);
-  } finally {
-    atualizandoAdmin = false;
-  }
-}
-
-setInterval(atualizarPainelAutomaticamente, INTERVALO_ATUALIZACAO_MS);
-// Ao voltar para a aba, atualiza na hora
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) atualizarPainelAutomaticamente();
-});
+iniciarAtualizacaoAutomatica(() => Promise.all([
+  carregarDadosAdmin({ automatico: true }),
+  carregarUsuarios({ automatico: true }),
+  carregarManutencoesAdmin({ automatico: true }),
+  carregarHistoricoUsuarios({ automatico: true }),
+  carregarCentralAdmin({ automatico: true })
+]), { intervaloMs: 15000, podeAtualizar: () => !adminEstaInteragindo() });
