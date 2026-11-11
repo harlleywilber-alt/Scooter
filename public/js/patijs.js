@@ -76,7 +76,7 @@ async function abrirModalAdicionarPatinetes() {
 
   let opcoesPontos = '<option value="">Selecione o ponto de distribuição</option>';
   pontosDisponiveis.forEach(p => {
-    opcoesPontos += `<option value="${p.id}">${p.nome} (${p.localizacao || "Ponto"})</option>`;
+    opcoesPontos += `<option value="${p.id}">${escaparHtml(p.nome)} (${escaparHtml(p.localizacao || "Ponto")})</option>`;
   });
 
   const c = document.getElementById("modalContent");
@@ -102,8 +102,8 @@ async function confirmarAdicionarPatinetes() {
   const qtd = parseInt(document.getElementById("qtdAdicionarPatinetes").value);
   const pontoId = document.getElementById("pontoAdicionarPatinetes").value;
 
-  if (!qtd || qtd <= 0) {
-    mostrarToast("Informe uma quantidade válida");
+  if (!qtd || qtd <= 0 || qtd > 100) {
+    mostrarToast("Informe uma quantidade entre 1 e 100");
     return;
   }
 
@@ -189,7 +189,7 @@ async function abrirHistoricoPatinete(id) {
   try {
     const dados = await api.getHistoricoPatinete(id);
     conteudo.innerHTML = `
-      <h3>Histórico de ${dados.patinete.codigo}</h3>
+      <h3>Histórico de ${escaparHtml(dados.patinete.codigo)}</h3>
       <p class="modal-subtitle">Locações e manutenções registradas para este patinete.</p>
       <div class="historico-operacional">
         ${dados.eventos.length ? dados.eventos.map(evento => `<article>
@@ -200,7 +200,7 @@ async function abrirHistoricoPatinete(id) {
       </div>
       <button class="btn-modal-gray" onclick="abrirOpcoesPatinete(${id})">Voltar</button>`;
   } catch (error) {
-    conteudo.innerHTML = `<h3>Histórico do patinete</h3><p>${error.message}</p><button class="btn-modal-gray" onclick="fecharModal()">Fechar</button>`;
+    conteudo.innerHTML = `<h3>Histórico do patinete</h3><p>${escaparHtml(error.message)}</p><button class="btn-modal-gray" onclick="fecharModal()">Fechar</button>`;
   }
 }
 
@@ -377,7 +377,7 @@ async function abrirModalMudarPonto(id) {
   let opcoesPontos = `<option value="" ${!b.pontoId ? "selected" : ""}>Sem ponto</option>`;
   pontosDisponiveis.forEach(p => {
     const selecionado = b.pontoId === p.id ? "selected" : "";
-    opcoesPontos += `<option value="${p.id}" ${selecionado}>${p.nome} (${p.localizacao || "Ponto"})</option>`;
+    opcoesPontos += `<option value="${p.id}" ${selecionado}>${escaparHtml(p.nome)} (${escaparHtml(p.localizacao || "Ponto")})</option>`;
   });
 
   const c = document.getElementById("modalContent");
@@ -444,8 +444,8 @@ function abrirFinalizarLocacao(id) {
   c.innerHTML = `
     <h3>Devolução de Patinete</h3>
     <p style="margin-bottom:6px;"><strong>Patinete:</strong> Patinete ${b.id}</p>
-    <p style="margin-bottom:6px;"><strong>Ponto de Origem:</strong> ${b.pontoNome || "Ponto Geral"}</p>
-    <p style="margin-bottom:6px;"><strong>Cliente:</strong> ${b.cliente}</p>
+    <p style="margin-bottom:6px;"><strong>Ponto de Origem:</strong> ${escaparHtml(b.pontoNome || "Ponto Geral")}</p>
+    <p style="margin-bottom:6px;"><strong>Cliente:</strong> ${escaparHtml(b.cliente)}</p>
     <p style="margin-bottom:6px;"><strong>Valor Base:</strong> R$ ${base.toFixed(2)}</p>
     <p style="margin-bottom:6px;"><strong>Acréscimo por Atraso:</strong> <span style="color:${multa > 0 ? '#ef4444' : '#10b981'}; font-weight:bold;">R$ ${multa.toFixed(2)}</span></p>
     <p style="font-size:1.2rem; margin: 12px 0;"><strong>Total a Cobrar:</strong> <b style="color:#6366f1;">R$ ${total.toFixed(2)}</b></p>
@@ -608,7 +608,7 @@ function render() {
           <span>${b.id}</span>
         </div>
         <span class="tag-ponto">
-          <i class="fa-solid fa-location-dot"></i> ${nomePonto}
+          <i class="fa-solid fa-location-dot"></i> ${escaparHtml(nomePonto)}
         </span>
       </div>
 
@@ -627,7 +627,7 @@ function render() {
 
       html += `
         <div style="margin-top: 4px; font-size: 13px;"><strong>${b.status === STATUS.ATRASADO ? "Atrasado" : "Alugado"}</strong></div>
-        <small style="color:var(--muted); display:block; font-size:12px;">Cliente: ${b.cliente}</small>
+        <small style="color:var(--muted); display:block; font-size:12px;">Cliente: ${escaparHtml(b.cliente)}</small>
         <div class="timer" style="color: ${b.status === STATUS.ATRASADO ? '#f87171' : '#34d399'}">
           ${restante >= 0 ? "⏱ Restante" : "🚨 Atraso"}: ${min}:${seg.toString().padStart(2, "0")}
         </div>
