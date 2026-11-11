@@ -1,3 +1,9 @@
+// E-Scooter GO - Funções compartilhadas por todas as telas
+
+// ==========================================
+// NAVEGAÇÃO E SEGURANÇA
+// ==========================================
+
 function navegarComAnimacao(url) {
   const transicao = document.getElementById("pageTransition");
   if (!transicao) {
@@ -18,15 +24,18 @@ function escaparHtml(valor) {
   })[caractere]);
 }
 
-// Dia/mês no horário local do navegador. As datas vêm em UTC (ISO), então
-// "slice(0, 7)" colocava locações feitas após 21h do último dia no mês seguinte.
+// ==========================================
+// DATAS NO HORÁRIO LOCAL
+// ==========================================
+
+// As datas chegam em UTC; relatórios agrupam pelo dia/mês local
 function diaLocalISO(valor) {
   const data = valor instanceof Date ? valor : new Date(valor);
   if (!valor || !Number.isFinite(data.getTime())) return "";
   return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
 }
 
-// Valor para <input type="datetime-local"> no horário local (toISOString() mostrava UTC, 3h adiantado)
+// Valor para campos <input type="datetime-local">
 function dataHoraLocalInput(valor) {
   const data = new Date(valor);
   if (!Number.isFinite(data.getTime())) return "";
@@ -38,11 +47,11 @@ function mesLocalISO(valor) {
   return diaLocalISO(valor).slice(0, 7);
 }
 
-// Atualização automática das telas, compartilhada por todas as páginas.
-// - roda "atualizar" a cada intervaloMs;
-// - pausa com a aba escondida e atualiza na hora ao voltar para ela;
-// - pula a rodada se "podeAtualizar" devolver false (ex.: janela aberta);
-// - nunca roda duas vezes ao mesmo tempo.
+// ==========================================
+// ATUALIZAÇÃO AUTOMÁTICA
+// ==========================================
+
+// Repete "atualizar" a cada intervaloMs; pausa com a aba escondida e quando podeAtualizar() é falso
 function iniciarAtualizacaoAutomatica(atualizar, { intervaloMs = 15000, podeAtualizar = () => true } = {}) {
   let emAndamento = false;
   const executar = async () => {
@@ -63,11 +72,15 @@ function iniciarAtualizacaoAutomatica(atualizar, { intervaloMs = 15000, podeAtua
   return { executar, parar: () => clearInterval(temporizador) };
 }
 
-// true quando o foco está num campo de formulário dentro de um dos seletores
+// true se o usuário está usando um campo dentro dos seletores informados
 function campoEmUsoDentroDe(seletores) {
   const ativo = document.activeElement;
   return Boolean(ativo && ["SELECT", "INPUT", "TEXTAREA"].includes(ativo.tagName) && ativo.closest(seletores));
 }
+
+// ==========================================
+// PERMISSÕES
+// ==========================================
 
 function usuarioEhAdministrador() {
   try {
