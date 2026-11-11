@@ -13,9 +13,29 @@ async function apiFetch(url, opcoes = {}) {
     localStorage.removeItem("usuarioLogado");
     localStorage.removeItem("authToken");
     window.location.href = "login.html";
-    throw new Error("Sua sessão expirou. Entre novamente.");
+    throw erroDoServidor("Sua sessão expirou. Entre novamente.");
   }
   return resposta;
+}
+
+// Erro vindo de uma resposta do servidor (validação, permissão, banco fora do ar).
+// Esses erros devem ser mostrados ao usuário; a contingência local só deve ser
+// usada quando não foi possível falar com o servidor (falha de rede).
+function erroDoServidor(mensagem) {
+  const erro = new Error(mensagem);
+  erro.respostaDoServidor = true;
+  return erro;
+}
+
+async function lerRespostaOuFalhar(res, mensagemPadrao = "Erro ao comunicar com o servidor.") {
+  let dados = {};
+  try {
+    dados = await res.json();
+  } catch {
+    dados = {};
+  }
+  if (!res.ok) throw erroDoServidor(dados.erro || mensagemPadrao);
+  return dados;
 }
 
 const DADOS_LOCAIS_PADRAO = {
@@ -125,12 +145,12 @@ const api = {
   async getUsuarios() {
     try {
       const res = await apiFetch(`${API_BASE}/api/admin/usuarios`);
-      if (res.ok) {
-        const dados = await res.json();
-        salvarStoreLocal("usuarios", dados);
-        return dados;
-      }
-    } catch (e) {}
+      const dados = await lerRespostaOuFalhar(res);
+      salvarStoreLocal("usuarios", dados);
+      return dados;
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
     return obterStoreLocal("usuarios", DADOS_LOCAIS_PADRAO.usuarios);
   },
 
@@ -141,8 +161,10 @@ const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, responsavel: obterResponsavelAtual() })
       });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const usuarios = obterStoreLocal("usuarios", DADOS_LOCAIS_PADRAO.usuarios);
     const u = usuarios.find(user => user.id === parseInt(id));
@@ -221,8 +243,10 @@ const api = {
   async getHistoricoUsuarios() {
     try {
       const res = await apiFetch(`${API_BASE}/api/admin/historico-usuarios`);
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
     return obterStoreLocal("historico_usuarios", []);
   },
 
@@ -245,12 +269,12 @@ const api = {
   async getPontos() {
     try {
       const res = await apiFetch(`${API_BASE}/api/pontos`);
-      if (res.ok) {
-        const dados = await res.json();
-        salvarStoreLocal("pontos", dados);
-        return dados;
-      }
-    } catch (e) {}
+      const dados = await lerRespostaOuFalhar(res);
+      salvarStoreLocal("pontos", dados);
+      return dados;
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const pontos = obterStoreLocal("pontos", DADOS_LOCAIS_PADRAO.pontos);
     const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
@@ -276,8 +300,10 @@ const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nome, localizacao })
       });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const pontos = obterStoreLocal("pontos", DADOS_LOCAIS_PADRAO.pontos);
     const novo = {
@@ -293,8 +319,10 @@ const api = {
   async removerPonto(id) {
     try {
       const res = await apiFetch(`${API_BASE}/api/pontos/${id}`, { method: "DELETE" });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     let pontos = obterStoreLocal("pontos", DADOS_LOCAIS_PADRAO.pontos);
     pontos = pontos.filter(p => p.id !== parseInt(id));
@@ -306,12 +334,12 @@ const api = {
   async getPatinetes() {
     try {
       const res = await apiFetch(`${API_BASE}/api/patinetes`);
-      if (res.ok) {
-        const dados = await res.json();
-        salvarStoreLocal("patinetes", dados);
-        return dados;
-      }
-    } catch (e) {}
+      const dados = await lerRespostaOuFalhar(res);
+      salvarStoreLocal("patinetes", dados);
+      return dados;
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     return obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
   },
@@ -330,8 +358,10 @@ const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ quantidade, pontoId })
       });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
     const pontos = obterStoreLocal("pontos", DADOS_LOCAIS_PADRAO.pontos);
@@ -366,8 +396,10 @@ const api = {
   async removerPatinete(id) {
     try {
       const res = await apiFetch(`${API_BASE}/api/patinetes/${id}`, { method: "DELETE" });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     let patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
     patinetes = patinetes.filter(p => p.id !== parseInt(id));
@@ -382,8 +414,10 @@ const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(dadosPatinete)
       });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
     const idx = patinetes.findIndex(p => p.id === parseInt(id));
@@ -424,8 +458,10 @@ const api = {
           pagamento
         })
       });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
     const locacoes = obterStoreLocal("locacoes", []);
@@ -471,8 +507,10 @@ const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ patineteId, multa })
       });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
     const locacoes = obterStoreLocal("locacoes", []);
@@ -585,8 +623,10 @@ const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ patineteId })
       });
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
     const p = patinetes.find(b => b.id === parseInt(patineteId));
@@ -621,8 +661,10 @@ const api = {
     try {
       const query = mes ? `?mes=${encodeURIComponent(mes)}` : "";
       const res = await apiFetch(`${API_BASE}/api/relatorios/resumo${query}`);
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
     const locacoes = obterStoreLocal("locacoes", []);
@@ -634,15 +676,15 @@ const api = {
       ? null
       : (!mes || mes === "atual" ? mesAtualStr : mes);
 
-    const locFiltradas = locacoes.filter(l => !mesAlvo || (l.dataInicio || "").slice(0, 7) === mesAlvo);
-    const manFiltradas = manutencoes.filter(m => !mesAlvo || (m.data || "").slice(0, 7) === mesAlvo);
+    const locFiltradas = locacoes.filter(l => !mesAlvo || mesLocalISO(l.dataInicio) === mesAlvo);
+    const manFiltradas = manutencoes.filter(m => !mesAlvo || mesLocalISO(m.data) === mesAlvo);
 
     const faturamentoTotal = locFiltradas.reduce((a, b) => a + (parseFloat(b.valorTotal) || 0), 0);
     const gastoManutencaoTotal = manFiltradas.reduce((a, b) => a + (parseFloat(b.valor) || 0), 0);
 
     const porDia = {};
     locFiltradas.forEach(l => {
-      const d = (l.dataInicio || "").slice(0, 10) || mesAtualStr + "-01";
+      const d = diaLocalISO(l.dataInicio) || mesAtualStr + "-01";
       if (!porDia[d]) porDia[d] = { faturamento: 0, manutencao: 0, locacoes: 0 };
       porDia[d].faturamento += parseFloat(l.valorTotal) || 0;
       porDia[d].locacoes += 1;
@@ -677,16 +719,20 @@ const api = {
   async getLocacoes() {
     try {
       const res = await apiFetch(`${API_BASE}/api/locacoes`);
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
     return obterStoreLocal("locacoes", []);
   },
 
   async getManutencoes() {
     try {
       const res = await apiFetch(`${API_BASE}/api/manutencoes`);
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
     return obterStoreLocal("manutencoes", []);
   },
 
@@ -695,8 +741,10 @@ const api = {
     try {
       const query = mes ? `?mes=${encodeURIComponent(mes)}` : "";
       const res = await apiFetch(`${API_BASE}/api/admin/stats${query}`);
-      if (res.ok) return await res.json();
-    } catch (e) {}
+      return await lerRespostaOuFalhar(res);
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
 
     const resumo = await this.getResumoRelatorio(mes);
     return {
