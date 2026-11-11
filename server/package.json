@@ -4,7 +4,7 @@
   "description": "Backend da plataforma E-Scooter Go",
   "main": "server.js",
   "scripts": {
-    "check": "node --check server.js && node --check database.js",
+    "check": "node --check server.js && node --check database.js && node --check conexao.js && node --check inicializacao.js",
     "start": "node server.js"
   },
   "keywords": [],
