@@ -296,7 +296,11 @@
 
   <div id="toastRelatorio" class="toast"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js com versão fixa (4.6.1). O "integrity" garante que o arquivo baixado
+       é exatamente este; para atualizar, troque a versão e gere o novo hash SHA-384. -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js"
+          integrity="sha384-Emf5ZVIUiarAdhkgtqK+5/Z5qIvM6QoVrS+qAVtfyZVuD5lIHrac0me485+Antp0"
+          crossorigin="anonymous"></script>
   <script src="js/common.js"></script>
   <script src="js/api.js"></script>
   <script src="js/relatorio.js"></script>
