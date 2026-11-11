@@ -1,4 +1,4 @@
-// Relatórios e gráficos
+// E-Scooter GO - Relatórios financeiros e gráficos
 
 let relatoriosGerais = [];
 let resumoServidor = null;
@@ -70,14 +70,16 @@ function mostrarToastRelatorio(msg) {
   }, 2800);
 }
 
-// Trocar entre Mês Vigente e Histórico Completo
+// ==========================================
+// PERÍODO E VISUALIZAÇÃO
+// ==========================================
 async function trocarPeriodoMes(valor) {
   periodoAtual = valor;
   sessionStorage.setItem("periodoRelatorio", valor);
   await carregarRelatoriosDoServidor();
 }
 
-// Alternar entre visualização de gráficos: Ambos, Barra, Pizza
+// Gráficos: Ambos, Barra ou Pizza
 function alternarVisualizacaoGraficos(modo) {
   const container = document.getElementById("containerGraficos");
   const btnAmbos = document.getElementById("btnVerAmbos");
@@ -97,14 +99,16 @@ function alternarVisualizacaoGraficos(modo) {
     btnAmbos.classList.add("active");
   }
 
-  // Aguarda o navegador concluir a nova grade antes de recalcular os canvases.
+  // Espera o layout mudar antes de redimensionar os gráficos
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if (chartBarra && modo !== "pizza") chartBarra.resize();
     if (chartPizza && modo !== "barra") chartPizza.resize();
   }));
 }
 
-// Carregar dados consolidados da API
+// ==========================================
+// CARREGAMENTO DOS DADOS
+// ==========================================
 async function carregarRelatoriosDoServidor() {
   try {
     const [resumo, locacoes, manutencoes] = await Promise.all([
@@ -115,7 +119,7 @@ async function carregarRelatoriosDoServidor() {
 
     resumoServidor = resumo;
 
-    // Se o período for 'atual', filtra as listas locais para o mês atual
+    // Filtra as listas pelo período selecionado
     const mesAlvo = resumo.periodo !== "Historico Completo" ? resumo.periodo : null;
 
     const listaNormalizada = [];
@@ -154,7 +158,6 @@ async function carregarRelatoriosDoServidor() {
       });
     });
 
-    // Ordena do mais recente para o mais antigo
     listaNormalizada.sort((a, b) => new Date(b.data) - new Date(a.data));
     relatoriosGerais = listaNormalizada;
 
@@ -237,7 +240,9 @@ function renderizarAnalisesDetalhadas() {
     <div class="ranking-item"><strong>${escaparRelatorio(item.codigo)}</strong><span>${item.totalLocacoes} locações</span><span>Custo ${moeda(item.gastoManutencao)}</span><span>Lucro ${moeda(item.lucroLiquido)}</span></div>`);
 }
 
-// Renderização dos Gráficos (Barra e Pizza)
+// ==========================================
+// GRÁFICOS
+// ==========================================
 function renderizarGraficos() {
   if (!resumoServidor || typeof Chart === "undefined") return;
 
@@ -253,7 +258,7 @@ function renderizarGraficos() {
     currency: "BRL"
   }).format(valor);
 
-  // 1. Gráfico em Barras: Comparativo diário
+  // Barras: comparativo diário
   const porDia = resumoServidor.porDia || {};
   let labels = Object.keys(porDia).sort();
 
@@ -385,7 +390,7 @@ function renderizarGraficos() {
     });
   }
 
-  // 2. Gráfico em Pizza: Proporção por Forma de Pagamento
+  // Pizza: faturamento por forma de pagamento
   const porPagamento = resumoServidor.porPagamento || {};
   let labelsPizza = Object.keys(porPagamento);
   let valoresPizza = labelsPizza.map(k => porPagamento[k]);
@@ -458,7 +463,9 @@ function renderizarGraficos() {
   }
 }
 
-// Filtros e Renderização da Tabela
+// ==========================================
+// FILTROS E TABELA DE REGISTROS
+// ==========================================
 function aplicarFiltros() {
   const tipo = document.getElementById("filtroTipo").value;
   const dataFiltro = document.getElementById("filtroData").value;
@@ -594,7 +601,9 @@ async function exportarExcel(mes) {
   baixarConteudo(html, "application/vnd.ms-excel;charset=utf-8", `relatorio-${mes}.xls`);
 }
 
+// ==========================================
 // INICIALIZAÇÃO
+// ==========================================
 const inputMes = document.getElementById("inputMesExportar");
 if (inputMes) {
   const agora = new Date();
