@@ -142,6 +142,6 @@ async function confirmarExcluirPonto(id, nome) {
 
 // INICIALIZAÇÃO E SINCRONIZAÇÃO PERIÓDICA
 carregarPontos();
-// Antes: a cada 3 s, mesmo com a aba escondida, redesenhando sempre.
-// Agora: a cada 15 s, pausa com a aba escondida e só redesenha se algo mudou.
+// Intervalo de atualização: 15 s (antes era 3 s, mesmo com a aba escondida e
+// redesenhando sempre). Pausa com a aba escondida e só redesenha se algo mudou.
 iniciarAtualizacaoAutomatica(() => carregarPontos({ automatico: true }), { intervaloMs: 15000 });
