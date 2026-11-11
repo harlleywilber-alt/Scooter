@@ -1,4 +1,4 @@
-// Comunicação com a API e armazenamento local de contingência
+// E-Scooter GO - Comunicação com a API (contingência local só em falha de rede)
 
 const isFileProtocol = window.location.protocol === "file:" || !window.location.host;
 const API_BASE = isFileProtocol ? "http://localhost:3000" : "";
@@ -18,9 +18,7 @@ async function apiFetch(url, opcoes = {}) {
   return resposta;
 }
 
-// Erro vindo de uma resposta do servidor (validação, permissão, banco fora do ar).
-// Esses erros devem ser mostrados ao usuário; a contingência local só deve ser
-// usada quando não foi possível falar com o servidor (falha de rede).
+// Erro respondido pelo servidor: é mostrado ao usuário, sem usar a contingência local
 function erroDoServidor(mensagem) {
   const erro = new Error(mensagem);
   erro.respostaDoServidor = true;
@@ -102,7 +100,7 @@ if (!localStorage.getItem("escooter_patinetes")) {
 }
 
 const api = {
-  // Autenticação & Gestão de Usuários
+  // ----- Autenticação e usuários -----
   async login(usuario, senha) {
     try {
       const res = await apiFetch(`${API_BASE}/api/auth/login`, {
@@ -265,7 +263,7 @@ const api = {
     }
   },
 
-  // Pontos de Distribuição
+  // ----- Pontos de distribuição -----
   async getPontos() {
     try {
       const res = await apiFetch(`${API_BASE}/api/pontos`);
@@ -330,7 +328,7 @@ const api = {
     return { mensagem: "Ponto removido com sucesso!" };
   },
 
-  // Patinetes
+  // ----- Patinetes -----
   async getPatinetes() {
     try {
       const res = await apiFetch(`${API_BASE}/api/patinetes`);
@@ -428,7 +426,7 @@ const api = {
     return { mensagem: "Patinete atualizado com sucesso!" };
   },
 
-  // Clientes e locações
+  // ----- Clientes e locações -----
   async getClientes() {
     const res = await apiFetch(`${API_BASE}/api/clientes`);
     const dados = await res.json();
@@ -443,7 +441,6 @@ const api = {
     return dados;
   },
 
-  // Locações
   async iniciarLocacao({ patineteIds, cliente, telefone, tempo, valorBase, pagamento }) {
     try {
       const res = await apiFetch(`${API_BASE}/api/locacoes/iniciar`, {
@@ -541,80 +538,40 @@ const api = {
     return { mensagem: "Patinete devolvido com sucesso!" };
   },
 
-  // Manutenções
+  // ----- Manutenções -----
   async registrarManutencao(patineteId, descricao, valor = 0) {
-  try {
-    const res = await apiFetch(`${API_BASE}/api/manutencoes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        patineteId,
+    try {
+      const res = await apiFetch(`${API_BASE}/api/manutencoes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patineteId, descricao, valor })
+      });
+      return await lerRespostaOuFalhar(res, "Erro ao enviar patinete para manutenção.");
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+    }
+
+    const patinetes = obterStoreLocal("patinetes", DADOS_LOCAIS_PADRAO.patinetes);
+    const manutencoes = obterStoreLocal("manutencoes", []);
+    const p = patinetes.find(b => b.id === parseInt(patineteId));
+    if (p) {
+      p.status = "manutencao";
+      manutencoes.push({
+        id: manutencoes.length + 1,
+        patineteId: p.id,
+        patineteCodigo: p.codigo || `PAT${p.id}`,
+        pontoNome: p.pontoNome || "Ponto",
         descricao,
-        valor,
-        usuario: this.obterUsuarioLogado().nome
-      })
-    });
-
-    const dados = await res.json();
-
-    // Se o servidor recusou, mostra exatamente o erro do server.js
-    if (!res.ok) {
-      const erro = new Error(
-        dados.erro || "Erro ao enviar patinete para manutenção."
-      );
-
-      erro.respostaDoServidor = true;
-      throw erro;
+        valor: Number(valor) || 0,
+        usuario: this.obterUsuarioLogado().nome,
+        status: "em_manutencao",
+        data: new Date().toISOString()
+      });
+      salvarStoreLocal("patinetes", patinetes);
+      salvarStoreLocal("manutencoes", manutencoes);
     }
-
-    return dados;
-
-  } catch (e) {
-
-    // Se o servidor respondeu com erro, NÃO usa armazenamento local
-    if (e.respostaDoServidor) {
-      throw e;
-    }
-
-    // Somente usa contingência se realmente não conseguiu conectar ao servidor
-    console.warn("Servidor indisponível. Usando armazenamento local.", e);
-  }
-
-  // CONTINGÊNCIA LOCAL
-  const patinetes = obterStoreLocal(
-    "patinetes",
-    DADOS_LOCAIS_PADRAO.patinetes
-  );
-
-  const manutencoes = obterStoreLocal("manutencoes", []);
-
-  const p = patinetes.find(
-    b => b.id === parseInt(patineteId)
-  );
-
-  if (p) {
-    p.status = "manutencao";
-
-    manutencoes.push({
-      id: manutencoes.length + 1,
-      patineteId: p.id,
-      patineteCodigo: p.codigo || `PAT${p.id}`,
-      pontoNome: p.pontoNome || "Ponto",
-      descricao,
-      valor: Number(valor) || 0,
-      usuario: this.obterUsuarioLogado().nome,
-      status: "em_manutencao",
-      data: new Date().toISOString()
-    });
-
-    salvarStoreLocal("patinetes", patinetes);
-    salvarStoreLocal("manutencoes", manutencoes);
-  }
-
-  return {
-    mensagem: "Patinete enviado para manutenção!"
-  };
-},
+    return { mensagem: "Patinete enviado para manutenção!" };
+  },
 
   async liberarManutencao(patineteId) {
     try {
@@ -656,7 +613,7 @@ const api = {
     return dados;
   },
 
-  // Relatórios
+  // ----- Relatórios -----
   async getResumoRelatorio(mes = null) {
     try {
       const query = mes ? `?mes=${encodeURIComponent(mes)}` : "";
@@ -736,7 +693,7 @@ const api = {
     return obterStoreLocal("manutencoes", []);
   },
 
-  // Admin
+  // ----- Painel admin -----
   async getAdminStats(mes = null) {
     try {
       const query = mes ? `?mes=${encodeURIComponent(mes)}` : "";
@@ -779,7 +736,7 @@ const api = {
     return dados;
   },
 
-  // Exportações
+  // ----- Exportações (CSV) -----
   async baixarArquivoAutenticado(url, nomePadrao) {
     const resposta = await apiFetch(url);
     if (!resposta.ok) throw new Error("Não foi possível exportar o arquivo.");
