@@ -78,8 +78,8 @@ function validarCadastro(nome, usuario, senha, confirmar) {
     ok = false;
   }
 
-  if (!senha || senha.length < 4) {
-    mostrarErro("senha", "Senha deve ter pelo menos 4 caracteres");
+  if (!senha || senha.length < 6) {
+    mostrarErro("senha", "Senha deve ter pelo menos 6 caracteres");
     ok = false;
   }
 
