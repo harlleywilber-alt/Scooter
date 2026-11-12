@@ -788,6 +788,10 @@ const api = {
 
   baixarPlanilhaPontos() {
     return this.baixarArquivoAutenticado(`${API_BASE}/api/relatorios/exportar/pontos`, "pontos.csv");
+  },
+
+  baixarPlanilhaExcel(mes) {
+    return this.baixarArquivoAutenticado(`${API_BASE}/api/relatorios/exportar/excel?mes=${encodeURIComponent(mes)}`, `relatorio-escooter-${mes}.xlsx`);
   }
 };
 
