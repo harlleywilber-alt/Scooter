@@ -96,16 +96,16 @@
       <div class="exportacao-descricao">
         <i class="fa-solid fa-calendar-check exportacao-icone"></i>
         <div>
-          <strong class="exportacao-titulo">Exportar Dados por Mês Específico:</strong>
-          <span class="exportacao-subtitulo">Selecione o mês/ano desejado para baixar a planilha detalhada em CSV</span>
+          <strong class="exportacao-titulo">Exportar relatório do mês:</strong>
+          <span class="exportacao-subtitulo">Escolha o mês e o formato. A planilha Excel traz resumo, locações, manutenções e frota em abas separadas.</span>
         </div>
       </div>
       <div class="exportacao-acoes">
         <input type="month" id="inputMesExportar" class="exportacao-mes">
         <select id="tipoExportacao" class="exportacao-mes" aria-label="Formato da exportação">
-          <option value="detalhado">Relatório detalhado (CSV)</option>
-          <option value="resumido">Relatório resumido (CSV)</option>
-          <option value="excel">Planilha Excel</option>
+          <option value="excel">Planilha Excel (.xlsx)</option>
+          <option value="detalhado">Locações em CSV</option>
+          <option value="resumido">Resumo em CSV</option>
           <option value="pdf">PDF / Impressão</option>
         </select>
         <button class="btn-topo" onclick="exportarRelatorioSelecionado()">
