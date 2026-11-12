@@ -25,6 +25,48 @@ function escaparHtml(valor) {
 }
 
 // ==========================================
+// AVISOS NA TELA (TOAST)
+// ==========================================
+
+const TIPOS_AVISO = {
+  sucesso: { icone: "fa-circle-check", duracao: 3500 },
+  erro: { icone: "fa-circle-xmark", duracao: 5500 },
+  alerta: { icone: "fa-triangle-exclamation", duracao: 6000 },
+  info: { icone: "fa-circle-info", duracao: 4000 }
+};
+
+// Descobre o tipo pelo texto quando a tela não informa
+function tipoDoAviso(mensagem) {
+  const texto = String(mensagem || "").toLowerCase();
+  if (texto.includes("com sucesso")) return "sucesso";
+  if (/erro|não |nao |inválid|indisponível|falh|recusad|sem permissão|obrigatório|informe|selecione|limite|conclua|finalize|está alugado|muitas tentativas|já está|já existe|já cadastrado/.test(texto)) return "erro";
+  if (/⚠️|atrasad|aguardando|novo cadastro|nova manutenção|novas manutenções/.test(texto)) return "alerta";
+  if (/iniciad|devolvid|removid|cadastrad|atualizad|liberad|transferid|enviad|concluíd|adicionad|bloquead|desbloquead|salv/.test(texto)) return "sucesso";
+  return "info";
+}
+
+function exibirAviso(idElemento, mensagem, tipo) {
+  const aviso = document.getElementById(idElemento);
+  if (!aviso) return;
+  const tipoFinal = TIPOS_AVISO[tipo] ? tipo : tipoDoAviso(mensagem);
+  const { icone, duracao } = TIPOS_AVISO[tipoFinal];
+  const texto = String(mensagem || "").replace(/^⚠️\s*/, "");
+
+  aviso.className = `toast toast-${tipoFinal}`;
+  aviso.setAttribute("role", tipoFinal === "erro" ? "alert" : "status");
+  aviso.innerHTML = `
+    <i class="fa-solid ${icone} toast-icone"></i>
+    <span class="toast-texto">${escaparHtml(texto)}</span>
+    <span class="toast-barra" style="animation-duration:${duracao}ms"></span>`;
+  aviso.onclick = () => aviso.classList.remove("show");
+
+  void aviso.offsetWidth; // reinicia a animação se outro aviso já estava na tela
+  aviso.classList.add("show");
+  clearTimeout(aviso._temporizador);
+  aviso._temporizador = setTimeout(() => aviso.classList.remove("show"), duracao);
+}
+
+// ==========================================
 // DATAS NO HORÁRIO LOCAL
 // ==========================================
 
