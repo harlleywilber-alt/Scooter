@@ -376,6 +376,21 @@ app.put("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, async (req, re
   }
 });
 
+app.post("/api/patinetes/remover", autenticarRequisicao, somenteAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ erro: "Selecione pelo menos um patinete." });
+    if (ids.length > 500) return res.status(400).json({ erro: "Selecione no máximo 500 patinetes por vez." });
+    const patinetes = await db.removerPatinetes(ids);
+    const mensagem = patinetes.length === 1
+      ? `Patinete ${patinetes[0].codigo} removido da frota com sucesso!`
+      : `${patinetes.length} patinetes removidos da frota com sucesso!`;
+    res.json({ mensagem, patinetes });
+  } catch (error) {
+    falhar(res, error, 400);
+  }
+});
+
 app.delete("/api/patinetes/:id", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
     const patinete = await db.removerPatinete(req.params.id);
