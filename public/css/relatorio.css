@@ -688,14 +688,9 @@ body {
 }
 
 @media (max-width: 700px) {
-  .topbar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .top-actions {
-    width: 100%;
-  }
+  .periodo-box { flex-wrap: wrap; }
+  .periodo-box select { flex: 1 1 200px; min-width: 0; max-width: 100%; }
+  .periodo-badge { margin-left: 0; }
 
   .cards-resumo {
     grid-template-columns: 1fr;
