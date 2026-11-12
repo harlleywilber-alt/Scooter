@@ -114,7 +114,7 @@ async function listarUsuarios() {
 }
 
 async function buscarUsuarioPorLogin(usuario) {
-  const { rows: [user] } = await consultar(`SELECT ${COLUNAS_USUARIO} FROM usuarios WHERE lower(usuario) = lower($1)`, [String(usuario || "")]);
+  const { rows: [user] } = await consultar(`SELECT ${COLUNAS_USUARIO} FROM usuarios WHERE usuario = $1`, [String(usuario || "")]);
   return user;
 }
 
@@ -139,7 +139,7 @@ async function autenticarUsuario(usuario, senha) {
   const { rows: [user] } = await consultar(
     `SELECT id, nome, usuario, cargo, nivel, status, bloqueado, ponto_id AS "pontoId",
             senha_hash AS "senhaHash", salt, iteracoes_senha AS "iteracoesSenha"
-       FROM usuarios WHERE lower(usuario) = lower($1)`, [String(usuario)]);
+       FROM usuarios WHERE usuario = $1`, [String(usuario)]); // diferencia maiúsculas e minúsculas
   if (!user) return { erro: "Usuário ou senha inválidos." };
 
   const senhaValida = await verificarSenha(senha, user.senhaHash, user.salt, user.iteracoesSenha);
@@ -317,15 +317,39 @@ async function adicionarPatinetes(qtd, pontoId = null) {
 }
 
 async function removerPatinete(id) {
+  const [removido] = await removerPatinetes([id]);
+  return removido;
+}
+
+// Remove vários patinetes de uma vez: ou todos são removidos, ou nenhum
+async function removerPatinetes(listaIds) {
+  const ids = [...new Set((listaIds || []).map(idOuNulo))];
+  if (!ids.length) throw falha("Selecione pelo menos um patinete.");
+  if (ids.includes(null)) throw falha("Patinete não encontrado");
+
   return transacao(async cliente => {
-    const { rows: [alvo] } = await cliente.query("SELECT id, status FROM patinetes WHERE id = $1 FOR UPDATE", [idOuNulo(id)]);
-    if (!alvo) throw falha("Patinete não encontrado");
-    const { rows: [ativa] } = await cliente.query("SELECT 1 FROM locacoes WHERE patinete_id = $1 AND status = 'ativa'", [alvo.id]);
-    if (alvo.status === "locado" || ativa) throw falha("Não é possível remover um patinete que está alugado no momento!");
-    if (alvo.status === "manutencao") throw falha("Conclua a manutenção antes de remover o patinete.");
-    const [removido] = await buscarPatinetes(cliente, [alvo.id]);
-    await cliente.query("DELETE FROM patinetes WHERE id = $1", [alvo.id]);
-    return removido;
+    const { rows: alvos } = await cliente.query(`
+      SELECT p.id, p.codigo, p.status,
+             EXISTS (SELECT 1 FROM locacoes l WHERE l.patinete_id = p.id AND l.status = 'ativa') AS alugado
+        FROM patinetes p WHERE p.id = ANY($1::int[]) ORDER BY p.id FOR UPDATE OF p`, [ids]);
+    if (alvos.length !== ids.length) throw falha(ids.length === 1 ? "Patinete não encontrado" : "Um dos patinetes selecionados não foi encontrado.");
+
+    const alugados = alvos.filter(p => p.status === "locado" || p.alugado).map(p => p.codigo);
+    const emManutencao = alvos.filter(p => p.status === "manutencao").map(p => p.codigo);
+    if (alugados.length) {
+      throw falha(ids.length === 1
+        ? "Não é possível remover um patinete que está alugado no momento!"
+        : `Não é possível remover patinetes alugados: ${alugados.join(", ")}.`);
+    }
+    if (emManutencao.length) {
+      throw falha(ids.length === 1
+        ? "Conclua a manutenção antes de remover o patinete."
+        : `Conclua a manutenção antes de remover: ${emManutencao.join(", ")}.`);
+    }
+
+    const removidos = await buscarPatinetes(cliente, ids);
+    await cliente.query("DELETE FROM patinetes WHERE id = ANY($1::int[])", [ids]);
+    return removidos;
   });
 }
 
@@ -854,6 +878,7 @@ module.exports = {
   buscarPatinetePorId,
   adicionarPatinetes,
   removerPatinete,
+  removerPatinetes,
   atualizarPatinete,
   listarLocacoes,
   listarClientes,
