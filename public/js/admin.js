@@ -1,19 +1,7 @@
 // E-Scooter GO - Painel administrativo
 
-function mostrarToastAdmin(msg) {
-  const toast = document.getElementById("toastAdmin");
-  if (!toast) {
-    alert(msg);
-    return;
-  }
-
-  toast.innerText = msg;
-  toast.classList.add("show");
-
-  clearTimeout(window.toastAdminTimeout);
-  window.toastAdminTimeout = setTimeout(() => {
-    toast.classList.remove("show");
-  }, 2500);
+function mostrarToastAdmin(msg, tipo) {
+  exibirAviso("toastAdmin", msg, tipo);
 }
 
 // ==========================================
