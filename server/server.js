@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const db = require("./database");
 const conexao = require("./conexao");
+const { gerarPlanilhaRelatorio } = require("./exportacao");
 const { FORMAS_PAGAMENTO } = require("./inicializacao");
 
 // ==========================================
@@ -564,6 +565,21 @@ app.get("/api/relatorios/resumo", autenticarRequisicao, somenteAdmin, async (req
   } catch (error) {
     if (error.erroDeValidacao) return falhar(res, error, 400);
     falhar(res, error, 500, "Erro ao consolidar resumo dos relatórios.");
+  }
+});
+
+// Planilha Excel (.xlsx) com abas Resumo, Locações, Manutenções e Frota; mesmo filtro de período do resumo
+app.get("/api/relatorios/exportar/excel", autenticarRequisicao, somenteAdmin, async (req, res) => {
+  try {
+    const { mes, inicio, fim } = req.query;
+    const filtro = inicio || fim ? { inicio, fim } : (mes || null);
+    const { buffer, nomeArquivo } = await gerarPlanilhaRelatorio(filtro);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${nomeArquivo}"`);
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    if (error.erroDeValidacao) return falhar(res, error, 400);
+    falhar(res, error, 500, "Erro ao gerar a planilha Excel.");
   }
 });
 
