@@ -4,7 +4,8 @@ let relatoriosGerais = [];
 let resumoServidor = null;
 let chartBarra = null;
 let chartPizza = null;
-let periodoAtual = "atual"; // 'atual' ou 'todos'
+// "atual", "anterior", "todos" ou { inicio: "AAAA-MM-DD", fim: "AAAA-MM-DD" }
+let periodoAtual = "atual";
 
 function selecionarSecaoRelatorio(secao, ajustarRolagem = true) {
   const secaoAtiva = document.querySelector(`[data-relatorio-menu="${secao}"]`) ? secao : "resumo";
@@ -64,10 +65,47 @@ function mostrarToastRelatorio(msg, tipo) {
 // ==========================================
 // PERÍODO E VISUALIZAÇÃO
 // ==========================================
+const dataBR = iso => (iso ? iso.split("-").reverse().join("/") : "");
+
+function salvarPeriodo() {
+  try { sessionStorage.setItem("periodoRelatorio", JSON.stringify(periodoAtual)); } catch {}
+}
+
 async function trocarPeriodoMes(valor) {
+  const caixaDatas = document.getElementById("periodoPersonalizado");
+  if (valor === "personalizado") {
+    // Sugere do dia 1 do mês até hoje; o relatório só muda ao clicar em Aplicar
+    const hoje = diaLocalISO(new Date());
+    const inicio = document.getElementById("periodoInicio");
+    const fim = document.getElementById("periodoFim");
+    if (!inicio.value) inicio.value = typeof periodoAtual === "object" ? periodoAtual.inicio : `${hoje.slice(0, 7)}-01`;
+    if (!fim.value) fim.value = typeof periodoAtual === "object" ? periodoAtual.fim : hoje;
+    caixaDatas.hidden = false;
+    inicio.focus();
+    return;
+  }
+  caixaDatas.hidden = true;
   periodoAtual = valor;
-  sessionStorage.setItem("periodoRelatorio", valor);
+  salvarPeriodo();
   await carregarRelatoriosDoServidor();
+}
+
+async function aplicarPeriodoPersonalizado() {
+  const inicio = document.getElementById("periodoInicio").value;
+  const fim = document.getElementById("periodoFim").value;
+  if (!inicio || !fim) return mostrarToastRelatorio("Informe a data inicial e a data final.", "erro");
+  if (inicio > fim) return mostrarToastRelatorio("A data inicial deve ser anterior ou igual à data final.", "erro");
+  periodoAtual = { inicio, fim };
+  salvarPeriodo();
+  await carregarRelatoriosDoServidor();
+}
+
+function descreverPeriodo(resumo) {
+  if (typeof periodoAtual === "object") return `${dataBR(periodoAtual.inicio)} a ${dataBR(periodoAtual.fim)}`;
+  if (periodoAtual === "todos") return "Todos os meses";
+  const [ano, mes] = String(resumo?.periodo || "").split("-");
+  const rotulo = periodoAtual === "anterior" ? "Mês passado" : "Mês atual";
+  return ano && mes ? `${rotulo}: ${mes}/${ano}` : rotulo;
 }
 
 // Gráficos: Ambos, Barra ou Pizza
@@ -109,15 +147,20 @@ async function carregarRelatoriosDoServidor() {
     ]);
 
     resumoServidor = resumo;
+    const badge = document.getElementById("badgePeriodo");
+    if (badge) badge.textContent = descreverPeriodo(resumo);
 
-    // Filtra as listas pelo período selecionado
-    const mesAlvo = resumo.periodo !== "Historico Completo" ? resumo.periodo : null;
+    // Filtra as listas pelo mesmo intervalo de datas do resumo
+    const { inicio, fim } = resumo.intervalo || {};
+    const noPeriodo = data => {
+      const dia = diaLocalISO(data);
+      return (!inicio || dia >= inicio) && (!fim || dia <= fim);
+    };
 
     const listaNormalizada = [];
 
     locacoes.forEach(loc => {
-      const mesLoc = mesLocalISO(loc.dataInicio);
-      if (mesAlvo && mesLoc !== mesAlvo) return; // ignora meses anteriores na exibição do mês
+      if (!noPeriodo(loc.dataInicio)) return;
 
       listaNormalizada.push({
         id: loc.id,
@@ -133,8 +176,7 @@ async function carregarRelatoriosDoServidor() {
     });
 
     manutencoes.forEach(m => {
-      const mesMan = mesLocalISO(m.data);
-      if (mesAlvo && mesMan !== mesAlvo) return;
+      if (!noPeriodo(m.data)) return;
 
       listaNormalizada.push({
         id: m.id,
@@ -182,6 +224,17 @@ function atualizarCardsResumo() {
   if (elLuc) {
     elLuc.innerText = `R$ ${financeiro.lucroTotal.toFixed(2)}`;
     elLuc.style.color = financeiro.lucroTotal >= 0 ? "#22c55e" : "#ef4444";
+  }
+
+  // A variação compara o mês atual com o anterior; nos outros períodos não se aplica
+  if (periodoAtual !== "atual") {
+    const texto = descreverPeriodo(resumoServidor);
+    ["variacaoLocacoes", "variacaoFaturamento", "variacaoManutencao", "variacaoLucro"].forEach(id => {
+      const elemento = document.getElementById(id);
+      if (elemento) { elemento.textContent = texto; elemento.className = "variacao-card neutra"; }
+    });
+    renderizarAnalisesDetalhadas();
+    return;
   }
 
   const variacoes = resumoServidor.comparacao?.variacoes || {};
@@ -609,9 +662,19 @@ document.getElementById("filtroData").value = filtrosSalvos.dataFiltro || "";
 document.getElementById("filtroCliente").value = filtrosSalvos.clienteFiltro || "";
 document.getElementById("buscaTexto").value = filtrosSalvos.buscaGeral || "";
 
-const periodoSalvo = sessionStorage.getItem("periodoRelatorio") || "atual";
-periodoAtual = periodoSalvo;
-document.getElementById("seletorPeriodoMes").value = periodoSalvo;
+// Restaura o período escolhido nesta sessão
+try {
+  const salvo = JSON.parse(sessionStorage.getItem("periodoRelatorio") || '"atual"');
+  if (["atual", "anterior", "todos"].includes(salvo) || (salvo && salvo.inicio && salvo.fim)) periodoAtual = salvo;
+} catch {}
+if (typeof periodoAtual === "object") {
+  document.getElementById("seletorPeriodoMes").value = "personalizado";
+  document.getElementById("periodoInicio").value = periodoAtual.inicio;
+  document.getElementById("periodoFim").value = periodoAtual.fim;
+  document.getElementById("periodoPersonalizado").hidden = false;
+} else {
+  document.getElementById("seletorPeriodoMes").value = periodoAtual;
+}
 
 selecionarSecaoRelatorio(sessionStorage.getItem("secaoRelatorioAtiva") || "resumo", false);
 carregarRelatoriosDoServidor();
