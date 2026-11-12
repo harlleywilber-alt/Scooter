@@ -731,7 +731,7 @@ body {
 
 @media print {
   .topbar, .bottom-nav, .filtros-grid, .acoes-filtro, .chart-toggle-group,
-  .top-actions, .periodo-box, .exportacao-box, [data-relatorio-secao="filtros"] {
+  .top-actions, .periodo-box, .exportacao-box {
     display: none !important;
   }
 
@@ -758,3 +758,6 @@ body {
   .relatorio-secao { display: block !important; }
   .cards-resumo.relatorio-secao { display: grid !important; }
 }
+
+/* Filtros dentro da aba Registros */
+[data-relatorio-secao="registros"] .filtros-grid { margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
