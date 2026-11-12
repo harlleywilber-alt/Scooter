@@ -54,9 +54,6 @@
           <button class="relatorio-menu-item" data-relatorio-menu="exportacao" onclick="selecionarSecaoRelatorio('exportacao')">
             <i class="fa-solid fa-file-arrow-down"></i><span>Exportação</span>
           </button>
-          <button class="relatorio-menu-item" data-relatorio-menu="filtros" onclick="selecionarSecaoRelatorio('filtros')">
-            <i class="fa-solid fa-filter"></i><span>Filtros</span>
-          </button>
           <button class="relatorio-menu-item" data-relatorio-menu="registros" onclick="selecionarSecaoRelatorio('registros')">
             <i class="fa-solid fa-table-list"></i><span>Registros</span>
           </button>
@@ -208,16 +205,17 @@
       </div>
     </section>
 
-    <!-- FILTROS -->
-    <section class="painel relatorio-secao" data-relatorio-secao="filtros">
-      <div class="painel-titulo">
-        <h3>Filtros de Registros</h3>
+    <!-- REGISTROS (FILTROS + TABELA) -->
+    <section class="painel relatorio-secao" data-relatorio-secao="registros">
+      <div class="painel-titulo painel-titulo-flex">
+        <h3>Registros do período</h3>
+        <span id="contadorTabela" class="contador-tabela">0 registros</span>
       </div>
 
       <div class="filtros-grid">
         <div class="campo">
-          <label for="filtroTipo">Tipo de Registro</label>
-          <select id="filtroTipo">
+          <label for="filtroTipo">Tipo de registro</label>
+          <select id="filtroTipo" onchange="aplicarFiltros()">
             <option value="todos">Todos os registros</option>
             <option value="locacao">Locações</option>
             <option value="manutencao">Manutenções</option>
@@ -225,37 +223,23 @@
         </div>
 
         <div class="campo">
-          <label for="filtroData">Data Específica</label>
-          <input type="date" id="filtroData">
+          <label for="filtroData">Data específica</label>
+          <input type="date" id="filtroData" onchange="aplicarFiltros()">
         </div>
 
         <div class="campo">
           <label for="filtroCliente">Cliente / Operador</label>
-          <input
-            type="text"
-            id="filtroCliente"
-            placeholder="Digite o nome..."
-            autocomplete="off"
-          >
+          <input type="text" id="filtroCliente" placeholder="Digite o nome..." autocomplete="off" oninput="aplicarFiltros()">
         </div>
 
         <div class="campo campo-busca">
-          <label for="buscaTexto">Busca Geral</label>
-          <input type="text" id="buscaTexto" placeholder="Patinete, ponto, pagamento...">
+          <label for="buscaTexto">Busca geral</label>
+          <input type="text" id="buscaTexto" placeholder="Patinete, ponto, pagamento..." oninput="aplicarFiltros()">
         </div>
 
         <div class="acoes-filtro">
-          <button class="btn-primary" onclick="aplicarFiltros()"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button>
-          <button class="btn-secondary" onclick="limparFiltros()"><i class="fa-solid fa-rotate-left"></i> Limpar</button>
+          <button class="btn-secondary" onclick="limparFiltros()"><i class="fa-solid fa-rotate-left"></i> Limpar filtros</button>
         </div>
-      </div>
-    </section>
-
-    <!-- TABELA DE HISTÓRICO -->
-    <section class="painel relatorio-secao" data-relatorio-secao="registros">
-      <div class="painel-titulo painel-titulo-flex">
-        <h3>Registros no Banco de Dados</h3>
-        <span id="contadorTabela" class="contador-tabela">0 registros</span>
       </div>
 
       <div class="tabela-container">
