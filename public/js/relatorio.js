@@ -57,17 +57,8 @@ document.addEventListener("click", evento => {
   }
 });
 
-function mostrarToastRelatorio(msg) {
-  const toast = document.getElementById("toastRelatorio");
-  if (!toast) return;
-
-  toast.innerText = msg;
-  toast.classList.add("show");
-
-  clearTimeout(window.toastRelatorioTimeout);
-  window.toastRelatorioTimeout = setTimeout(() => {
-    toast.classList.remove("show");
-  }, 2800);
+function mostrarToastRelatorio(msg, tipo) {
+  exibirAviso("toastRelatorio", msg, tipo);
 }
 
 // ==========================================
