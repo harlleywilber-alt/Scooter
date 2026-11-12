@@ -405,6 +405,20 @@ const api = {
     return { mensagem: "Patinete removido com sucesso!" };
   },
 
+  async removerPatinetes(ids) {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/patinetes/remover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids })
+      });
+      return await lerRespostaOuFalhar(res, "Erro ao remover patinetes.");
+    } catch (e) {
+      if (e.respostaDoServidor) throw e;
+      throw new Error("Não foi possível conectar ao servidor para remover os patinetes.");
+    }
+  },
+
   async atualizarPatinete(id, dadosPatinete) {
     try {
       const res = await apiFetch(`${API_BASE}/api/patinetes/${id}`, {
