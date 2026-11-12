@@ -378,29 +378,6 @@ body {
   color: #fff;
 }
 
-/* TOAST */
-.toast {
-  position: fixed;
-  right: 20px;
-  bottom: 100px;
-  background: rgba(15, 23, 42, 0.96);
-  color: #fff;
-  padding: 14px 20px;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(20px);
-  transition: 0.25s ease;
-  z-index: 1000;
-}
-
-.toast.show {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 .page-transition {
   position: fixed;
   inset: 0;
