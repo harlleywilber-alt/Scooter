@@ -68,6 +68,7 @@ async function carregarDadosDoServidor({ automatico = false } = {}) {
     document.querySelectorAll(".brand-title").forEach(elemento => { elemento.textContent = configuracoesSistema.nomeEmpresa; });
 
     atualizarContadores();
+    atualizarOpcoesPontoFrota();
     render();
   } catch (error) {
     console.error("Erro ao carregar dados:", error);
@@ -152,33 +153,89 @@ async function confirmarAdicionarPatinetes() {
 }
 
 // ==========================================
-// REMOVER PATINETE
+// REMOVER PATINETES (um ou vários)
 // ==========================================
+const DESCRICAO_STATUS = {
+  livre: "Disponível",
+  locado: "Alugado",
+  atrasado: "Alugado",
+  manutencao: "Em manutenção"
+};
+
 function abrirModalRemoverPatinete() {
-  const c = document.getElementById("modalContent");
-  c.innerHTML = `
-    <h3><i class="fa-solid fa-minus"></i> Remover Patinete</h3>
-    <p class="modal-subtitle" style="color:var(--muted); margin-bottom:15px;">Digite o número do patinete que deseja remover.</p>
-    <input id="idRemoverPatinete" type="number" min="1" placeholder="Número do patinete (ex: 1)">
+  const ordenados = [...bikes].sort((a, b) => a.id - b.id);
+  const pontos = [...new Set(ordenados.map(b => b.pontoNome || "Sem ponto"))].sort();
+
+  const itens = ordenados.map(b => {
+    const bloqueado = b.status !== STATUS.LIVRE;
+    const ponto = b.pontoNome || "Sem ponto";
+    return `
+      <label class="remocao-item ${bloqueado ? "bloqueado" : ""}" data-ponto="${escaparHtml(ponto)}">
+        <input type="checkbox" value="${b.id}" data-codigo="${escaparHtml(b.codigo || `PAT${b.id}`)}" ${bloqueado ? "disabled" : ""} onchange="atualizarSelecaoRemocao()">
+        <span class="remocao-codigo">${escaparHtml(b.codigo || `Patinete ${b.id}`)}</span>
+        <span class="remocao-info">${escaparHtml(ponto)} · ${b.bateria ?? 0}%</span>
+        <span class="remocao-status status-${b.status}">${DESCRICAO_STATUS[b.status] || b.status}</span>
+      </label>`;
+  }).join("");
+
+  document.getElementById("modalContent").innerHTML = `
+    <h3><i class="fa-solid fa-minus"></i> Remover patinetes</h3>
+    <p class="modal-subtitle">Selecione um ou mais patinetes. Alugados ou em manutenção não podem ser removidos.</p>
+    <select id="filtroPontoRemocao" onchange="filtrarListaRemocao()">
+      <option value="">Todos os pontos</option>
+      ${pontos.map(p => `<option value="${escaparHtml(p)}">${escaparHtml(p)}</option>`).join("")}
+    </select>
+    <div class="remocao-barra">
+      <button type="button" onclick="selecionarTodosRemocao(true)"><i class="fa-solid fa-check-double"></i> Selecionar todos</button>
+      <button type="button" onclick="selecionarTodosRemocao(false)"><i class="fa-solid fa-xmark"></i> Limpar</button>
+    </div>
+    <div class="lista-remocao">${itens || '<p class="remocao-vazia">Nenhum patinete na frota.</p>'}</div>
     <div class="modal-actions-2">
-      <button class="btn-modal-green" style="background:var(--red) !important;" onclick="confirmarRemoverPatinete()">Remover</button>
+      <button id="btnConfirmarRemocao" class="btn-modal-green btn-remover-confirmar" onclick="confirmarRemoverPatinete()" disabled>Remover</button>
       <button class="btn-modal-gray" onclick="fecharModal()">Cancelar</button>
     </div>
   `;
   document.getElementById("modal").style.display = "flex";
 }
 
+function patinetesSelecionadosRemocao() {
+  return [...document.querySelectorAll(".lista-remocao input:checked")];
+}
+
+function atualizarSelecaoRemocao() {
+  const total = patinetesSelecionadosRemocao().length;
+  const botao = document.getElementById("btnConfirmarRemocao");
+  botao.disabled = total === 0;
+  botao.textContent = total ? `Remover (${total})` : "Remover";
+}
+
+function filtrarListaRemocao() {
+  const ponto = document.getElementById("filtroPontoRemocao").value;
+  document.querySelectorAll(".remocao-item").forEach(item => {
+    item.hidden = Boolean(ponto) && item.dataset.ponto !== ponto;
+  });
+}
+
+// Marca ou desmarca todos os patinetes visíveis que podem ser removidos
+function selecionarTodosRemocao(marcar) {
+  document.querySelectorAll(".remocao-item:not([hidden]) input:not(:disabled)").forEach(input => {
+    input.checked = marcar;
+  });
+  atualizarSelecaoRemocao();
+}
+
 async function confirmarRemoverPatinete() {
-  const id = parseInt(document.getElementById("idRemoverPatinete").value);
-  if (!id) {
-    mostrarToast("Informe um número válido");
-    return;
-  }
+  const selecionados = patinetesSelecionadosRemocao();
+  if (!selecionados.length) return mostrarToast("Selecione pelo menos um patinete");
+
+  const codigos = selecionados.map(input => input.dataset.codigo);
+  const lista = codigos.length > 8 ? `${codigos.slice(0, 8).join(", ")} e mais ${codigos.length - 8}` : codigos.join(", ");
+  if (!confirm(`Remover ${codigos.length} patinete(s) da frota?\n\n${lista}\n\nEsta ação não pode ser desfeita.`)) return;
 
   try {
-    const res = await api.removerPatinete(id);
+    const res = await api.removerPatinetes(selecionados.map(input => Number(input.value)));
     fecharModal();
-    mostrarToast(res.mensagem || "Patinete removido com sucesso!");
+    mostrarToast(res.mensagem || "Patinetes removidos com sucesso!");
     await carregarDadosDoServidor();
   } catch (error) {
     mostrarToast(error.message);
@@ -592,7 +649,7 @@ async function confirmarLiberarManutencao(id) {
 }
 
 // ==========================================
-// RENDERIZAÇÃO DOS CARDS
+// CONTADORES
 // ==========================================
 function atualizarContadores() {
   const qtdLivre = document.getElementById("qtdLivre");
@@ -614,24 +671,93 @@ function atualizarContadores() {
   }
 }
 
+// ==========================================
+// FILTROS DA FROTA
+// ==========================================
+
+let filtrosFrota = { busca: "", ponto: "", status: "todos" };
+try {
+  filtrosFrota = { ...filtrosFrota, ...JSON.parse(sessionStorage.getItem("filtrosFrota") || "{}") };
+} catch {}
+
+const semAcento = texto => String(texto || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+function correspondeStatus(bike, status) {
+  if (status === "uso") return bike.status === STATUS.LOCADO || bike.status === STATUS.ATRASADO;
+  if (status === "todos") return true;
+  return bike.status === status;
+}
+
+// Filtra por busca (número, código ou cliente) e ponto; o status é aplicado à parte
+function filtrarPorBuscaEPonto(lista) {
+  const termo = semAcento(filtrosFrota.busca.trim());
+  return lista.filter(b => {
+    if (filtrosFrota.ponto && (b.pontoNome || "Sem ponto") !== filtrosFrota.ponto) return false;
+    if (!termo) return true;
+    return [String(b.id), b.codigo, b.cliente].some(campo => semAcento(campo).includes(termo));
+  });
+}
+
+function aplicarFiltrosFrota() {
+  filtrosFrota.busca = document.getElementById("buscaFrota")?.value || "";
+  filtrosFrota.ponto = document.getElementById("filtroPontoFrota")?.value || "";
+  try { sessionStorage.setItem("filtrosFrota", JSON.stringify(filtrosFrota)); } catch {}
+  render();
+}
+
+function filtrarStatusFrota(status) {
+  filtrosFrota.status = filtrosFrota.status === status && status !== "todos" ? "todos" : status;
+  aplicarFiltrosFrota();
+  document.querySelector(".fleet-box")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function atualizarOpcoesPontoFrota() {
+  const select = document.getElementById("filtroPontoFrota");
+  if (!select) return;
+  const pontos = [...new Set(bikes.map(b => b.pontoNome || "Sem ponto"))].sort();
+  if (filtrosFrota.ponto && !pontos.includes(filtrosFrota.ponto)) filtrosFrota.ponto = "";
+  select.innerHTML = '<option value="">Todos os pontos</option>' +
+    pontos.map(p => `<option value="${escaparHtml(p)}">${escaparHtml(p)}</option>`).join("");
+  select.value = filtrosFrota.ponto;
+}
+
+function atualizarChipsStatus(base) {
+  document.querySelectorAll("#filtroStatusFrota .chip-status").forEach(chip => {
+    const status = chip.dataset.status;
+    chip.classList.toggle("ativo", status === filtrosFrota.status);
+    chip.querySelector("b").textContent = base.filter(b => correspondeStatus(b, status)).length;
+  });
+}
+
+// ==========================================
+// RENDERIZAÇÃO DOS CARDS
+// ==========================================
+
 function render() {
   const modal = document.getElementById("modal");
   if ((modal && modal.style.display === "flex") || bloqueado || !grid) return;
 
   grid.innerHTML = "";
 
-  const bikesOrdenadas = [...bikes].sort((a, b) => a.id - b.id);
-  const total = bikesOrdenadas.length;
+  bikes.forEach(b => {
+    if (b.status === STATUS.LOCADO && calcularTempoRestante(b) <= 0) b.status = STATUS.ATRASADO;
+  });
 
+  const base = filtrarPorBuscaEPonto(bikes);
+  const bikesOrdenadas = base.filter(b => correspondeStatus(b, filtrosFrota.status)).sort((a, b) => a.id - b.id);
+  atualizarChipsStatus(base);
+
+  const filtrando = bikesOrdenadas.length !== bikes.length;
   const contador = document.getElementById("contadorResultados");
-  if (contador) contador.innerText = `${total} resultado(s)`;
+  if (contador) contador.innerText = filtrando ? `${bikesOrdenadas.length} de ${bikes.length} patinete(s)` : `${bikes.length} patinete(s)`;
+
+  if (!bikesOrdenadas.length && bikes.length) {
+    grid.innerHTML = '<p class="frota-vazia">Nenhum patinete encontrado com esses filtros.</p>';
+    return;
+  }
 
   bikesOrdenadas.forEach(b => {
     const restante = calcularTempoRestante(b);
-
-    if (b.status === STATUS.LOCADO && restante <= 0) {
-      b.status = STATUS.ATRASADO;
-    }
 
     const card = document.createElement("div");
     card.classList.add("bike", "card-" + b.status);
@@ -699,6 +825,13 @@ function render() {
 // ==========================================
 // INICIALIZAÇÃO
 // ==========================================
+const campoBusca = document.getElementById("buscaFrota");
+campoBusca.value = filtrosFrota.busca;
+// Texto de ajuda curto no celular, completo no computador
+const telaPequena = window.matchMedia("(max-width: 640px)");
+const ajustarTextoBusca = () => { campoBusca.placeholder = telaPequena.matches ? "Buscar…" : "Buscar por número, código ou cliente"; };
+ajustarTextoBusca();
+telaPequena.addEventListener("change", ajustarTextoBusca);
 carregarDadosDoServidor();
 
 // Cronômetros e avisos de atraso: a cada 1 s, sem ir ao servidor
