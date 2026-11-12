@@ -67,21 +67,28 @@
     <section class="hero-pagina relatorio-secao active" data-relatorio-secao="resumo">
       <div>
         <h2>Relatórios de Faturamento & Desempenho</h2>
-        <p>Valores zerados e calculados automaticamente por mês vigente, com histórico completo arquivado para exportação.</p>
+        <p>Escolha o período para ver locações, faturamento, gastos com manutenção e lucro.</p>
       </div>
     </section>
 
-    <!-- SELETOR DE PERÍODO (MÊS VIGENTE OU HISTÓRICO) -->
+    <!-- SELETOR DE PERÍODO -->
     <div class="periodo-box relatorio-secao active" data-relatorio-secao="resumo">
       <i class="fa-solid fa-calendar-days periodo-icone"></i>
-      <span class="periodo-label">Visualização de Dados:</span>
+      <span class="periodo-label">Período:</span>
       <select id="seletorPeriodoMes" onchange="trocarPeriodoMes(this.value)">
-        <option value="atual">📅 Mês Atual (Vigente)</option>
-        <option value="todos">🗄️ Histórico Completo (Todos os Meses)</option>
+        <option value="atual">📅 Mês atual</option>
+        <option value="anterior">⏮️ Mês passado</option>
+        <option value="personalizado">🗓️ Período personalizado</option>
+        <option value="todos">🗄️ Histórico completo</option>
       </select>
-      <span id="badgePeriodo" class="periodo-badge">
-        Fechamento mensal automático
-      </span>
+      <div id="periodoPersonalizado" class="periodo-personalizado" hidden>
+        <label>De <input type="date" id="periodoInicio"></label>
+        <label>Até <input type="date" id="periodoFim"></label>
+        <button type="button" class="btn-aplicar-periodo" onclick="aplicarPeriodoPersonalizado()">
+          <i class="fa-solid fa-check"></i> Aplicar
+        </button>
+      </div>
+      <span id="badgePeriodo" class="periodo-badge">Mês atual</span>
     </div>
 
     <!-- BOX EXPORTAÇÃO POR MÊS ESCOLHIDO -->
