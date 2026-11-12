@@ -20,17 +20,8 @@ let pontosDisponiveis = [];
 let bloqueado = false;
 const grid = document.getElementById("grid");
 
-function mostrarToast(msg) {
-  const toast = document.getElementById("toast");
-  if (!toast) return;
-
-  toast.innerText = msg;
-  toast.classList.add("show");
-
-  clearTimeout(window.toastTimeout);
-  window.toastTimeout = setTimeout(() => {
-    toast.classList.remove("show");
-  }, 3000);
+function mostrarToast(msg, tipo) {
+  exibirAviso("toast", msg, tipo);
 }
 
 function fecharModal() {
