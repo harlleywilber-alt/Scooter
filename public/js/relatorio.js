@@ -596,7 +596,7 @@ function exportarRelatorioSelecionado() {
     mostrarToastRelatorio("Selecione um mês válido para exportar");
     return;
   }
-  const tipo = document.getElementById("tipoExportacao")?.value || "detalhado";
+  const tipo = document.getElementById("tipoExportacao")?.value || "excel";
   if (tipo === "pdf") {
     window.print();
     return;
@@ -634,15 +634,15 @@ async function exportarResumoCsv(mes) {
   baixarConteudo(`\uFEFF${csv}`, "text/csv;charset=utf-8", `relatorio-resumido-${mes}.csv`);
 }
 
+// Planilha .xlsx gerada no servidor (abas Resumo, Locações, Manutenções e Frota)
 async function exportarExcel(mes) {
-  const [locacoes, manutencoes] = await Promise.all([api.getLocacoes(), api.getManutencoes()]);
-  const registros = [
-    ...locacoes.filter(item => mesLocalISO(item.dataInicio) === mes).map(item => ({ data: item.dataInicio, tipo: "Locação", patinete: item.patineteCodigo, cliente: item.cliente, usuario: item.usuarioOperador, valor: item.valorTotal })),
-    ...manutencoes.filter(item => mesLocalISO(item.data) === mes).map(item => ({ data: item.data, tipo: "Manutenção", patinete: item.patineteCodigo, cliente: "Oficina", usuario: item.usuario, valor: item.valor }))
-  ];
-  const linhas = registros.map(item => `<tr><td>${escaparRelatorio(item.data)}</td><td>${escaparRelatorio(item.tipo)}</td><td>${escaparRelatorio(item.patinete)}</td><td>${escaparRelatorio(item.cliente)}</td><td>${escaparRelatorio(item.usuario)}</td><td>${Number(item.valor || 0).toFixed(2)}</td></tr>`).join("");
-  const html = `<html><meta charset="UTF-8"><body><table><thead><tr><th>Data</th><th>Tipo</th><th>Patinete</th><th>Cliente</th><th>Operador</th><th>Valor</th></tr></thead><tbody>${linhas}</tbody></table></body></html>`;
-  baixarConteudo(html, "application/vnd.ms-excel;charset=utf-8", `relatorio-${mes}.xls`);
+  try {
+    mostrarToastRelatorio("Gerando a planilha Excel...", "info");
+    await api.baixarPlanilhaExcel(mes);
+    mostrarToastRelatorio("Planilha Excel gerada com sucesso!", "sucesso");
+  } catch (error) {
+    mostrarToastRelatorio(error.message || "Não foi possível gerar a planilha.", "erro");
+  }
 }
 
 // ==========================================
