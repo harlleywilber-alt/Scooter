@@ -555,10 +555,14 @@ app.put("/api/admin/manutencoes/:id", autenticarRequisicao, somenteAdmin, async 
 // 6. RELATÓRIOS E EXPORTAÇÃO (CSV)
 // ==========================================
 
+// Período: ?mes=atual|anterior|todos|AAAA-MM  ou  ?inicio=AAAA-MM-DD&fim=AAAA-MM-DD
 app.get("/api/relatorios/resumo", autenticarRequisicao, somenteAdmin, async (req, res) => {
   try {
-    res.json(await db.obterResumoGeral(req.query.mes || null));
+    const { mes, inicio, fim } = req.query;
+    const filtro = inicio || fim ? { inicio, fim } : (mes || null);
+    res.json(await db.obterResumoGeral(filtro));
   } catch (error) {
+    if (error.erroDeValidacao) return falhar(res, error, 400);
     falhar(res, error, 500, "Erro ao consolidar resumo dos relatórios.");
   }
 });
