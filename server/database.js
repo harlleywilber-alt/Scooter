@@ -721,14 +721,41 @@ async function obterPainelOperacional() {
 // ==========================================
 // RELATÓRIOS
 // ==========================================
-async function obterResumoGeral(mesFiltro = null) {
+// Converte o filtro do relatório em intervalo de dias (no fuso da operação):
+// "atual", "anterior", "todos", "AAAA-MM" ou { inicio: "AAAA-MM-DD", fim: "AAAA-MM-DD" }
+function intervaloDoPeriodo(filtro) {
+  const mesAtual = mesLocal(new Date());
+  const doMes = mes => {
+    const [ano, m] = mes.split("-").map(Number);
+    const ultimoDia = String(new Date(ano, m, 0).getDate()).padStart(2, "0");
+    return { inicio: `${mes}-01`, fim: `${mes}-${ultimoDia}`, periodo: mes };
+  };
+  const dataValida = texto => /^\d{4}-\d{2}-\d{2}$/.test(texto || "")
+    && new Date(`${texto}T12:00:00Z`).toISOString().slice(0, 10) === texto;
+
+  if (filtro && typeof filtro === "object") {
+    const { inicio, fim } = filtro;
+    if (!dataValida(inicio) || !dataValida(fim)) throw falha("Informe as datas inicial e final do período.");
+    if (inicio > fim) throw falha("A data inicial deve ser anterior ou igual à data final.");
+    return { inicio, fim, periodo: `${inicio} a ${fim}` };
+  }
+  if (filtro === "todos") return { inicio: null, fim: null, periodo: "Historico Completo" };
+  if (filtro === "anterior") return doMes(mesAnteriorDe(mesAtual));
+  if (!filtro || filtro === "atual") return doMes(mesAtual);
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(filtro)) return doMes(filtro);
+  throw falha("Período inválido.");
+}
+
+async function obterResumoGeral(filtro = null) {
   const mesAtualStr = mesLocal(new Date());
-  const mesAlvo = mesFiltro === "todos" ? null : (!mesFiltro || mesFiltro === "atual" ? mesAtualStr : String(mesFiltro));
   const mesAnteriorStr = mesAnteriorDe(mesAtualStr);
-  // $1 = mês alvo (NULL = histórico completo), $2 = fuso da operação
-  const filtroLoc = "($1::text IS NULL OR to_char(l.data_inicio AT TIME ZONE $2, 'YYYY-MM') = $1)";
-  const filtroMan = "($1::text IS NULL OR to_char(m.data AT TIME ZONE $2, 'YYYY-MM') = $1)";
-  const parametros = [mesAlvo, FUSO_HORARIO];
+  const { inicio, fim, periodo } = intervaloDoPeriodo(filtro);
+  // $1 = data inicial, $2 = data final (NULL = sem limite), $3 = fuso da operação
+  const entre = coluna => `($1::date IS NULL OR ${coluna} >= $1::date::timestamp AT TIME ZONE $3)
+    AND ($2::date IS NULL OR ${coluna} < ($2::date + 1)::timestamp AT TIME ZONE $3)`;
+  const filtroLoc = entre("l.data_inicio");
+  const filtroMan = entre("m.data");
+  const parametros = [inicio, fim, FUSO_HORARIO];
 
   return transacao(async c => {
     const lista = async (sql, params = parametros) => (await c.query(sql, params)).rows;
@@ -760,10 +787,10 @@ async function obterResumoGeral(mesFiltro = null) {
 
     const dias = await lista(`
       SELECT dia, SUM(faturamento) AS faturamento, SUM(manutencao) AS manutencao, SUM(locacoes) AS locacoes FROM (
-        SELECT to_char(l.data_inicio AT TIME ZONE $2, 'YYYY-MM-DD') AS dia, SUM(l.valor_total) AS faturamento, 0 AS manutencao, COUNT(*) AS locacoes
+        SELECT to_char(l.data_inicio AT TIME ZONE $3, 'YYYY-MM-DD') AS dia, SUM(l.valor_total) AS faturamento, 0 AS manutencao, COUNT(*) AS locacoes
           FROM locacoes l WHERE ${filtroLoc} GROUP BY 1
         UNION ALL
-        SELECT to_char(m.data AT TIME ZONE $2, 'YYYY-MM-DD'), 0, SUM(m.valor), 0
+        SELECT to_char(m.data AT TIME ZONE $3, 'YYYY-MM-DD'), 0, SUM(m.valor), 0
           FROM manutencoes m WHERE ${filtroMan} GROUP BY 1
       ) t GROUP BY dia ORDER BY dia`);
 
@@ -812,7 +839,8 @@ async function obterResumoGeral(mesFiltro = null) {
     const anterior = consolidarMes(mesAnteriorStr);
 
     return {
-      periodo: mesAlvo || "Historico Completo",
+      periodo,
+      intervalo: { inicio, fim },
       mesAtual: mesAtualStr,
       frota,
       financeiro: {
