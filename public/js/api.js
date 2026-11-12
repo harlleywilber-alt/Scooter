@@ -628,9 +628,13 @@ const api = {
   },
 
   // ----- Relatórios -----
-  async getResumoRelatorio(mes = null) {
+  // periodo: "atual", "anterior", "todos", "AAAA-MM" ou { inicio, fim } (AAAA-MM-DD)
+  async getResumoRelatorio(periodo = null) {
+    const personalizado = periodo && typeof periodo === "object";
     try {
-      const query = mes ? `?mes=${encodeURIComponent(mes)}` : "";
+      const query = personalizado
+        ? `?inicio=${encodeURIComponent(periodo.inicio)}&fim=${encodeURIComponent(periodo.fim)}`
+        : (periodo ? `?mes=${encodeURIComponent(periodo)}` : "");
       const res = await apiFetch(`${API_BASE}/api/relatorios/resumo${query}`);
       return await lerRespostaOuFalhar(res);
     } catch (e) {
@@ -642,13 +646,17 @@ const api = {
     const manutencoes = obterStoreLocal("manutencoes", []);
 
     const agora = new Date();
-    const mesAtualStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
-    const mesAlvo = mes === "todos"
-      ? null
-      : (!mes || mes === "atual" ? mesAtualStr : mes);
+    const mesAtualStr = mesLocalISO(agora);
+    const mesPassado = mesLocalISO(new Date(agora.getFullYear(), agora.getMonth() - 1, 1));
+    const mesAlvo = personalizado || periodo === "todos" ? null
+      : periodo === "anterior" ? mesPassado
+      : (!periodo || periodo === "atual" ? mesAtualStr : periodo);
+    const noPeriodo = data => personalizado
+      ? diaLocalISO(data) >= periodo.inicio && diaLocalISO(data) <= periodo.fim
+      : !mesAlvo || mesLocalISO(data) === mesAlvo;
 
-    const locFiltradas = locacoes.filter(l => !mesAlvo || mesLocalISO(l.dataInicio) === mesAlvo);
-    const manFiltradas = manutencoes.filter(m => !mesAlvo || mesLocalISO(m.data) === mesAlvo);
+    const locFiltradas = locacoes.filter(l => noPeriodo(l.dataInicio));
+    const manFiltradas = manutencoes.filter(m => noPeriodo(m.data));
 
     const faturamentoTotal = locFiltradas.reduce((a, b) => a + (parseFloat(b.valorTotal) || 0), 0);
     const gastoManutencaoTotal = manFiltradas.reduce((a, b) => a + (parseFloat(b.valor) || 0), 0);
@@ -668,7 +676,9 @@ const api = {
     });
 
     return {
-      periodo: mesAlvo || "Historico Completo",
+      periodo: personalizado ? `${periodo.inicio} a ${periodo.fim}` : (mesAlvo || "Historico Completo"),
+      intervalo: personalizado ? { inicio: periodo.inicio, fim: periodo.fim }
+        : (mesAlvo ? { inicio: `${mesAlvo}-01`, fim: `${mesAlvo}-31` } : { inicio: null, fim: null }),
       mesAtual: mesAtualStr,
       frota: {
         total: patinetes.length,
