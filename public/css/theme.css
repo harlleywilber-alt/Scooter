@@ -270,18 +270,56 @@ input:focus, select:focus, textarea:focus {
 .modal-content { border: 1px solid var(--border-soft) !important; box-shadow: 0 20px 48px rgba(0,0,0,.38) !important; }
 
 @media (max-width: 640px) {
+  /* Cabeçalho: logo e nome à esquerda, botões à direita, numa linha só */
   .topbar {
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
     gap: 10px !important;
     padding: 12px 14px !important;
   }
 
-  .fleet-actions, .top-actions, .topbar-actions, .acoes, .acoes-filtro {
+  .brand-area, .logo-topo { min-width: 0; flex: 1 1 auto; }
+
+  .brand-title, .logo-texto h1 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-actions, .top-actions {
+    width: auto !important;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 8px !important;
+  }
+
+  /* Cabeçalho da frota: título em cima, botões em grade embaixo */
+  .section-header { flex-direction: column; align-items: stretch !important; }
+
+  .fleet-actions {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+
+  .fleet-actions > button { justify-content: center; }
+
+  /* Contadores da frota: dois por linha, o terceiro ocupa a linha inteira */
+  .status-linha {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px !important;
+  }
+
+  .status-badge { justify-content: center; padding: 8px 10px !important; }
+  .status-badge:last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+  .fleet-actions, .acoes, .acoes-filtro {
     width: 100%;
     gap: 7px !important;
   }
 
-  .fleet-actions > button, .top-actions > button, .acoes > button,
-  .acoes-filtro > button {
+  .acoes > button, .acoes-filtro > button {
     flex: 1 1 auto;
   }
 
