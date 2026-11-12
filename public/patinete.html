@@ -41,17 +41,17 @@
       <!-- Resumo da frota -->
       <section class="status">
         <div class="status-linha">
-          <span class="status-badge badge-livre">
+          <button type="button" class="status-badge badge-livre" title="Filtrar patinetes parados" onclick="filtrarStatusFrota('livre')">
             Disponível: <b id="qtdLivre">0</b>
-          </span>
+          </button>
 
-          <span class="status-badge badge-locado">
+          <button type="button" class="status-badge badge-locado" title="Filtrar patinetes em uso" onclick="filtrarStatusFrota('uso')">
             Alugado: <b id="qtdLocado">0</b>
-          </span>
+          </button>
 
-          <span class="status-badge badge-manutencao">
+          <button type="button" class="status-badge badge-manutencao" title="Filtrar patinetes em manutenção" onclick="filtrarStatusFrota('manutencao')">
             Manutenção: <b id="qtdManutencao">0</b>
-          </span>
+          </button>
         </div>
       </section>
 
@@ -74,6 +74,23 @@
             <button class="btn-frota-action" data-admin-only onclick="abrirModalRemoverPatinete()">
               <i class="fa-solid fa-minus"></i> Remover
             </button>
+          </div>
+        </div>
+
+        <div class="filtros-frota">
+          <div class="busca-frota">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input id="buscaFrota" type="search" placeholder="Buscar por número, código ou cliente" oninput="aplicarFiltrosFrota()">
+          </div>
+          <select id="filtroPontoFrota" data-admin-only onchange="aplicarFiltrosFrota()">
+            <option value="">Todos os pontos</option>
+          </select>
+          <div class="filtro-status" id="filtroStatusFrota">
+            <button type="button" class="chip-status ativo" data-status="todos" onclick="filtrarStatusFrota('todos')">Todos <b>0</b></button>
+            <button type="button" class="chip-status" data-status="uso" onclick="filtrarStatusFrota('uso')">Em uso <b>0</b></button>
+            <button type="button" class="chip-status" data-status="atrasado" onclick="filtrarStatusFrota('atrasado')">Atrasados <b>0</b></button>
+            <button type="button" class="chip-status" data-status="manutencao" onclick="filtrarStatusFrota('manutencao')">Manutenção <b>0</b></button>
+            <button type="button" class="chip-status" data-status="livre" onclick="filtrarStatusFrota('livre')">Parados <b>0</b></button>
           </div>
         </div>
 
