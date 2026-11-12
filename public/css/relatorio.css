@@ -133,6 +133,13 @@ body {
 .periodo-icone { color: #60a5fa; font-size: 18px; }
 .periodo-label { font-size: 14px; font-weight: 600; }
 .periodo-badge { margin-left: auto; font-size: 12px; color: var(--muted); background: rgba(255,255,255,.05); padding: 4px 10px; border-radius: 999px; }
+.periodo-box { flex-wrap: wrap; }
+.periodo-personalizado { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.periodo-personalizado[hidden] { display: none; }
+.periodo-personalizado label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.periodo-personalizado input[type="date"] { background: rgba(30,41,59,.8); border: 1px solid var(--line); border-radius: 8px; color: #fff; padding: 6px 8px; font-weight: 600; color-scheme: dark; }
+.btn-aplicar-periodo { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: none; border-radius: 8px; background: linear-gradient(135deg, var(--brand-primary, #3b82f6), var(--brand-primary-dark, #2563eb)); color: #fff; font-weight: 700; cursor: pointer; }
+.btn-aplicar-periodo:hover { filter: brightness(1.1); }
 .exportacao-box { background: rgba(15,23,42,.75); border: 1px solid var(--line); border-radius: 16px; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
 .exportacao-descricao { display: flex; align-items: center; gap: 10px; }
 .exportacao-icone { font-size: 20px; color: #10b981; }
@@ -669,6 +676,11 @@ body {
   .periodo-box { flex-wrap: wrap; }
   .periodo-box select { flex: 1 1 200px; min-width: 0; max-width: 100%; }
   .periodo-badge { margin-left: 0; }
+  .periodo-personalizado { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .periodo-personalizado[hidden] { display: none; }
+  .periodo-personalizado label { flex-direction: column; align-items: stretch; gap: 4px; }
+  .periodo-personalizado input[type="date"] { width: 100%; min-width: 0; }
+  .btn-aplicar-periodo { grid-column: 1 / -1; justify-content: center; padding: 10px; }
 
   .cards-resumo {
     grid-template-columns: 1fr;
