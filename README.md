@@ -45,6 +45,7 @@ centralizados em um banco de dados relacional.
 - Node.js
 - Express.js
 - API REST
+- ExcelJS (exportação de relatórios em planilha .xlsx)
 
 ### Banco de Dados
 - PostgreSQL
@@ -86,6 +87,7 @@ Scooter/
 │   ├── database.sql
 │   ├── conexao.js
 │   ├── inicializacao.js
+│   ├── exportacao.js
 │   ├── package.json
 │   └── docker-compose.yml
 │
