@@ -8,6 +8,7 @@ let chartPizza = null;
 let periodoAtual = "atual";
 
 function selecionarSecaoRelatorio(secao, ajustarRolagem = true) {
+  if (secao === "filtros") secao = "registros"; // a antiga aba Filtros agora faz parte de Registros
   const secaoAtiva = document.querySelector(`[data-relatorio-menu="${secao}"]`) ? secao : "resumo";
 
   document.querySelectorAll("[data-relatorio-secao]").forEach(elemento => {
@@ -558,7 +559,11 @@ function renderizarTabela(dados) {
   if (!tbody) return;
 
   tbody.innerHTML = "";
-  if (contador) contador.innerText = `${dados.length} registro(s) no período`;
+  if (contador) {
+    contador.innerText = dados.length === relatoriosGerais.length
+      ? `${dados.length} registro(s) no período`
+      : `${dados.length} de ${relatoriosGerais.length} registro(s)`;
+  }
 
   if (dados.length === 0) {
     tbody.innerHTML = `
