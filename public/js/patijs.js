@@ -153,6 +153,9 @@ const DESCRICAO_STATUS = {
   manutencao: "Em manutenção"
 };
 
+// Máximo de patinetes por remoção (mesmo limite do servidor)
+const LIMITE_REMOCAO = 500;
+
 function abrirModalRemoverPatinete() {
   const ordenados = [...bikes].sort((a, b) => a.id - b.id);
   const pontos = [...new Set(ordenados.map(b => b.pontoNome || "Sem ponto"))].sort();
@@ -162,7 +165,7 @@ function abrirModalRemoverPatinete() {
     const ponto = b.pontoNome || "Sem ponto";
     return `
       <label class="remocao-item ${bloqueado ? "bloqueado" : ""}" data-ponto="${escaparHtml(ponto)}">
-        <input type="checkbox" value="${b.id}" data-codigo="${escaparHtml(b.codigo || `PAT${b.id}`)}" ${bloqueado ? "disabled" : ""} onchange="atualizarSelecaoRemocao()">
+        <input type="checkbox" value="${b.id}" data-codigo="${escaparHtml(b.codigo || `PAT${b.id}`)}" ${bloqueado ? "disabled" : ""} onchange="aoMarcarRemocao(this)">
         <span class="remocao-codigo">${escaparHtml(b.codigo || `Patinete ${b.id}`)}</span>
         <span class="remocao-info">${escaparHtml(ponto)} · ${b.bateria ?? 0}%</span>
         <span class="remocao-status status-${b.status}">${DESCRICAO_STATUS[b.status] || b.status}</span>
@@ -171,7 +174,7 @@ function abrirModalRemoverPatinete() {
 
   document.getElementById("modalContent").innerHTML = `
     <h3><i class="fa-solid fa-minus"></i> Remover patinetes</h3>
-    <p class="modal-subtitle">Selecione um ou mais patinetes. Alugados ou em manutenção não podem ser removidos.</p>
+    <p class="modal-subtitle">Selecione até ${LIMITE_REMOCAO} patinetes por vez. Alugados ou em manutenção não podem ser removidos.</p>
     <select id="filtroPontoRemocao" onchange="filtrarListaRemocao()">
       <option value="">Todos os pontos</option>
       ${pontos.map(p => `<option value="${escaparHtml(p)}">${escaparHtml(p)}</option>`).join("")}
@@ -180,6 +183,7 @@ function abrirModalRemoverPatinete() {
       <button type="button" onclick="selecionarTodosRemocao(true)"><i class="fa-solid fa-check-double"></i> Selecionar todos</button>
       <button type="button" onclick="selecionarTodosRemocao(false)"><i class="fa-solid fa-xmark"></i> Limpar</button>
     </div>
+    <div id="contadorRemocao" class="remocao-contador">0 de ${LIMITE_REMOCAO} selecionados</div>
     <div class="lista-remocao">${itens || '<p class="remocao-vazia">Nenhum patinete na frota.</p>'}</div>
     <div class="modal-actions-2">
       <button id="btnConfirmarRemocao" class="btn-modal-green btn-remover-confirmar" onclick="confirmarRemoverPatinete()" disabled>Remover</button>
@@ -195,9 +199,30 @@ function patinetesSelecionadosRemocao() {
 
 function atualizarSelecaoRemocao() {
   const total = patinetesSelecionadosRemocao().length;
+  const noLimite = total >= LIMITE_REMOCAO;
   const botao = document.getElementById("btnConfirmarRemocao");
   botao.disabled = total === 0;
   botao.textContent = total ? `Remover (${total})` : "Remover";
+
+  const contador = document.getElementById("contadorRemocao");
+  contador.textContent = noLimite
+    ? `Limite atingido: ${total} de ${LIMITE_REMOCAO} selecionados`
+    : `${total} de ${LIMITE_REMOCAO} selecionados`;
+  contador.classList.toggle("no-limite", noLimite);
+  document.querySelector(".lista-remocao")?.classList.toggle("limite-atingido", noLimite);
+}
+
+function avisarLimiteRemocao() {
+  mostrarToast(`Limite de ${LIMITE_REMOCAO} patinetes por remoção atingido. Desmarque algum para selecionar outro.`, "alerta");
+}
+
+// Impede marcar além do limite: desfaz o clique e avisa
+function aoMarcarRemocao(input) {
+  if (input.checked && patinetesSelecionadosRemocao().length > LIMITE_REMOCAO) {
+    input.checked = false;
+    avisarLimiteRemocao();
+  }
+  atualizarSelecaoRemocao();
 }
 
 function filtrarListaRemocao() {
@@ -207,12 +232,26 @@ function filtrarListaRemocao() {
   });
 }
 
-// Marca ou desmarca todos os patinetes visíveis que podem ser removidos
+// Marca os patinetes visíveis até o limite (na ordem da lista) ou desmarca todos
 function selecionarTodosRemocao(marcar) {
-  document.querySelectorAll(".remocao-item:not([hidden]) input:not(:disabled)").forEach(input => {
-    input.checked = marcar;
-  });
+  if (!marcar) {
+    document.querySelectorAll(".lista-remocao input:checked").forEach(input => { input.checked = false; });
+    atualizarSelecaoRemocao();
+    return;
+  }
+
+  const disponiveis = [...document.querySelectorAll(".remocao-item:not([hidden]) input:not(:disabled):not(:checked)")];
+  const vagas = LIMITE_REMOCAO - patinetesSelecionadosRemocao().length;
+  if (vagas <= 0 && disponiveis.length) {
+    avisarLimiteRemocao();
+    return;
+  }
+  disponiveis.slice(0, vagas).forEach(input => { input.checked = true; });
   atualizarSelecaoRemocao();
+
+  if (disponiveis.length > vagas) {
+    mostrarToast(`Foram selecionados os primeiros ${LIMITE_REMOCAO} patinetes, que é o limite por remoção. Remova estes e repita para os demais.`, "alerta");
+  }
 }
 
 async function confirmarRemoverPatinete() {
